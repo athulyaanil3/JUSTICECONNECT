@@ -1,0 +1,7 @@
+subprojects {
+    plugins.withId("com.android.library") {
+        if (project.android.namespace == null) {
+            project.android.namespace = project.group
+        }
+    }
+}
