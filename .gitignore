@@ -43,3 +43,14 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Project specific exclusions
+.gradle/
+.kotlin/
+**/ephemeral/
+**/.plugin_symlinks/
+.env
+local.properties
+supabase/.temp/
+diff_output.txt
+diff_utf8.txt
