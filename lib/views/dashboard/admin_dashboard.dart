@@ -80,80 +80,92 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        title: Text(_titles[_selectedIndex], style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 1,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_active, color: Colors.blue),
-            onPressed: () {
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminNotificationsScreen()));
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout, color: Colors.red),
-            onPressed: _logout,
-          ),
-        ],
-      ),
-      drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            DrawerHeader(
-              decoration: BoxDecoration(
-                color: Theme.of(context).primaryColor,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  const CircleAvatar(
-                    radius: 30,
-                    backgroundColor: Colors.white,
-                    child: Icon(Icons.admin_panel_settings, size: 40, color: Colors.black),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Administrator',
-                    style: GoogleFonts.outfit(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
+    return PopScope(
+      canPop: _selectedIndex == 0,
+      onPopInvoked: (didPop) {
+        if (didPop) {
+          return;
+        }
+        setState(() {
+          _selectedIndex = 0;
+        });
+        _updateSecurity();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.grey[50],
+        appBar: AppBar(
+          title: Text(_titles[_selectedIndex], style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black,
+          elevation: 1,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.notifications_active, color: Colors.blue),
+              onPressed: () {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminNotificationsScreen()));
+              },
             ),
-            _buildDrawerItem(
-              icon: Icons.dashboard,
-              text: 'Overview',
-              index: 0,
-            ),
-            _buildDrawerItem(
-              icon: Icons.gavel,
-              text: 'Lawyers',
-              index: 1,
-            ),
-            _buildDrawerItem(
-              icon: Icons.manage_accounts,
-              text: 'Roles',
-              index: 2,
-            ),
-            _buildDrawerItem(
-              icon: Icons.report_problem,
-              text: 'Complaints',
-              index: 3,
-            ),
-            _buildDrawerItem(
-              icon: Icons.business,
-              text: 'Offices',
-              index: 4,
+            IconButton(
+              icon: const Icon(Icons.logout, color: Colors.red),
+              onPressed: _logout,
             ),
           ],
         ),
+        drawer: Drawer(
+          child: ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              DrawerHeader(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).primaryColor,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    const CircleAvatar(
+                      radius: 30,
+                      backgroundColor: Colors.white,
+                      child: Icon(Icons.admin_panel_settings, size: 40, color: Colors.black),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Administrator',
+                      style: GoogleFonts.outfit(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+              _buildDrawerItem(
+                icon: Icons.dashboard,
+                text: 'Overview',
+                index: 0,
+              ),
+              _buildDrawerItem(
+                icon: Icons.gavel,
+                text: 'Lawyers',
+                index: 1,
+              ),
+              _buildDrawerItem(
+                icon: Icons.manage_accounts,
+                text: 'Roles',
+                index: 2,
+              ),
+              _buildDrawerItem(
+                icon: Icons.report_problem,
+                text: 'Complaints',
+                index: 3,
+              ),
+              _buildDrawerItem(
+                icon: Icons.business,
+                text: 'Offices',
+                index: 4,
+              ),
+            ],
+          ),
+        ),
+        body: _tabs[_selectedIndex],
       ),
-      body: _tabs[_selectedIndex],
     );
   }
 
