@@ -51,7 +51,13 @@ class LawyerProvider with ChangeNotifier {
       // Auto-assign the specific clerk associated with this lawyer
       String? actualClerkId = advocateClerkId;
       if (actualClerkId == null) {
-        final clerkQuery = await _supabase.from('profiles').select('id').eq('role', 'Advocate Clerk').eq('associated_lawyer_id', userId).limit(1).maybeSingle();
+        final clerkQuery = await _supabase.from('profiles')
+            .select('id')
+            .eq('role', 'Advocate Clerk')
+            .eq('associated_lawyer_id', userId)
+            .eq('is_verified', true) // Only assign approved clerks
+            .limit(1)
+            .maybeSingle();
         if (clerkQuery != null && clerkQuery['id'] != null) {
           actualClerkId = clerkQuery['id'];
         }
