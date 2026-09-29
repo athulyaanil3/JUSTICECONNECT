@@ -11,6 +11,7 @@ import '../../../models/consultation_request.dart';
 import '../../chat/chat_screen.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ClientManagementTab extends StatefulWidget {
   const ClientManagementTab({Key? key}) : super(key: key);
@@ -63,85 +64,198 @@ class _ClientManagementTabState extends State<ClientManagementTab> {
     final categoryController = TextEditingController();
     
     final lawyerProvider = Provider.of<LawyerProvider>(context, listen: false);
-    final clerks = await lawyerProvider.fetchAvailableClerks();
-    String? selectedClerkId;
     
     if (!context.mounted) return;
     
     showDialog(
       context: context,
+      barrierDismissible: false, // Prevent dismissing while loading
       builder: (ctx) => StatefulBuilder(
         builder: (context, setState) {
-          return AlertDialog(
-            title: const Text('Take Case'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('Convert this consultation into a formal court case.', style: GoogleFonts.inter(fontSize: 14)),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: titleController,
-                    decoration: const InputDecoration(labelText: 'Case Title', hintText: 'e.g. Property Dispute'),
+          bool _isSubmitting = false;
+
+          return StatefulBuilder( // Use nested StatefulBuilder to just rebuild the dialog content
+            builder: (context, setStateDialog) {
+              return AlertDialog(
+                title: const Text('Take Case'),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Convert this consultation into a formal court case.', style: GoogleFonts.inter(fontSize: 14)),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: titleController,
+                        decoration: const InputDecoration(labelText: 'Case Title', hintText: 'e.g. Property Dispute'),
+                        enabled: !_isSubmitting,
+                      ),
+                      TextField(
+                        controller: categoryController,
+                        decoration: const InputDecoration(labelText: 'Category', hintText: 'e.g. Civil'),
+                        enabled: !_isSubmitting,
+                      ),
+                    ],
                   ),
-                  TextField(
-                    controller: categoryController,
-                    decoration: const InputDecoration(labelText: 'Category', hintText: 'e.g. Civil'),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: _isSubmitting ? null : () => Navigator.pop(ctx), 
+                    child: const Text('Cancel')
                   ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    value: selectedClerkId,
-                    hint: const Text('Assign Advocate Clerk (Optional)'),
-                    items: clerks.map((clerk) => DropdownMenuItem(
-                      value: clerk['id'] as String,
-                      child: Text(clerk['username'] ?? 'Unknown Clerk'),
-                    )).toList(),
-                    onChanged: (val) {
-                      setState(() => selectedClerkId = val);
+                  ElevatedButton(
+                    onPressed: _isSubmitting ? null : () async {
+                      if (titleController.text.isNotEmpty && categoryController.text.isNotEmpty) {
+                        setStateDialog(() {
+                          _isSubmitting = true;
+                        });
+                        
+                        try {
+                          // 1. Submit Case
+                          await lawyerProvider.submitNewCaseFile(
+                            titleController.text,
+                            categoryController.text,
+                            request.issueDescription,
+                            request.citizenName, // Using citizenName as clientId for linking
+                          );
+                          
+                          // 2. Notify User
+                          final notification = AppNotification(
+                            id: Uuid().v4(),
+                            title: 'Case Started!',
+                            message: '${request.lawyerName} has officially taken your case: ${titleController.text}.',
+                            timestamp: DateTime.now(),
+                            actionPayload: request.id,
+                          );
+                          if (context.mounted) {
+                            Provider.of<NotificationProvider>(context, listen: false).addNotification(notification, request.citizenName);
+                            // 3. Update Consultation Request Status
+                            await Provider.of<RequestProvider>(context, listen: false).updateRequestStatus(request.id, 'Case Started');
+                            
+                            Navigator.pop(ctx);
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Case officially taken and submitted!'), backgroundColor: Colors.green));
+                          }
+                        } catch (e) {
+                          if (context.mounted) {
+                            setStateDialog(() {
+                              _isSubmitting = false;
+                            });
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to submit case'), backgroundColor: Colors.red));
+                          }
+                        }
+                      }
                     },
-                  ),
+                    child: _isSubmitting 
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Text('Take Case'),
+                  )
                 ],
-              ),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-              ElevatedButton(
-                onPressed: () async {
-                  if (titleController.text.isNotEmpty && categoryController.text.isNotEmpty) {
-                    // 1. Submit Case
-                    await lawyerProvider.submitNewCaseFile(
-                      titleController.text,
-                      categoryController.text,
-                      request.issueDescription,
-                      request.citizenName, // Using citizenName as clientId for linking
-                      advocateClerkId: selectedClerkId,
-                    );
-                    
-                    // 2. Notify User
-                    final notification = AppNotification(
-                      id: Uuid().v4(),
-                      title: 'Case Started!',
-                      message: '${request.lawyerName} has officially taken your case: ${titleController.text}.',
-                      timestamp: DateTime.now(),
-                      actionPayload: request.id,
-                    );
-                    Provider.of<NotificationProvider>(context, listen: false).addNotification(notification, request.citizenName);
-                    
-                    // 3. Update Consultation Request Status
-                    await Provider.of<RequestProvider>(context, listen: false).updateRequestStatus(request.id, 'Case Started');
-                    
-                    if (context.mounted) {
-                      Navigator.pop(ctx);
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Case officially taken and submitted!'), backgroundColor: Colors.green));
-                    }
-                  }
-                },
-                child: const Text('Take Case'),
-              )
-            ],
+              );
+            }
           );
         }
       ),
+    );
+  }
+
+  void _showClerkReviewDialog(BuildContext context, Map<String, dynamic> clerk) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        final docName = clerk['verification_document'];
+        return AlertDialog(
+          title: Text('Review Clerk Request', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Name: ${clerk['username'] ?? 'Unknown'}', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                Text('Email: ${clerk['email'] ?? 'N/A'}'),
+                const SizedBox(height: 8),
+                Text('Court ID: ${clerk['court_id'] ?? 'N/A'}'),
+                const SizedBox(height: 8),
+                Text('District: ${clerk['court_district'] ?? 'N/A'}'),
+                const SizedBox(height: 16),
+                Text('Uploaded Document', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.picture_as_pdf, color: Colors.red),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          docName ?? 'No document uploaded',
+                          style: GoogleFonts.inter(color: Colors.blue[700], decoration: TextDecoration.underline),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.download),
+                        onPressed: () async {
+                          if (docName != null) {
+                            final url = Supabase.instance.client.storage.from('documents').getPublicUrl(docName);
+                            final uri = Uri.parse(url);
+                            if (await canLaunchUrl(uri)) {
+                              await launchUrl(uri, mode: LaunchMode.externalApplication);
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not launch URL')));
+                            }
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No document uploaded')));
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                try {
+                  await _supabase.from('profiles').update({'is_verified': false}).eq('id', clerk['id']);
+                  _fetchClerks();
+                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Clerk Rejected!')));
+                } catch (e) {
+                  debugPrint('Error rejecting clerk: $e');
+                }
+              },
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Reject'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                try {
+                  await _supabase.from('profiles').update({'is_verified': true}).eq('id', clerk['id']);
+                  _fetchClerks();
+                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Clerk Approved!')));
+                } catch (e) {
+                  debugPrint('Error approving clerk: $e');
+                }
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+              child: const Text('Approve'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -223,17 +337,9 @@ class _ClientManagementTabState extends State<ClientManagementTab> {
                 title: Text(clerk['username'] ?? 'Unknown', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
                 subtitle: Text('Pending Approval • Court: ${clerk['court_id']}'),
                 trailing: ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
-                  onPressed: () async {
-                    try {
-                      await _supabase.from('profiles').update({'is_verified': true}).eq('id', clerk['id']);
-                      _fetchClerks();
-                      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Clerk Approved!')));
-                    } catch (e) {
-                      debugPrint('Error approving clerk: $e');
-                    }
-                  },
-                  child: const Text('Approve'),
+                  style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor, foregroundColor: Colors.white),
+                  onPressed: () => _showClerkReviewDialog(context, clerk),
+                  child: const Text('Review'),
                 ),
               ),
             )).toList(),
