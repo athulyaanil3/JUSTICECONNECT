@@ -6,6 +6,7 @@ import '../../../models/case_document.dart';
 import '../../../controllers/advocate_clerk_provider.dart';
 import '../chat/filing_chat_screen.dart';
 import 'package:share_plus/share_plus.dart';
+import '../../shared/secure_evidence_viewer.dart';
 
 class AdvocateClerkFilingsTab extends StatefulWidget {
   const AdvocateClerkFilingsTab({Key? key}) : super(key: key);
@@ -212,12 +213,36 @@ class _AdvocateClerkFilingsTabState extends State<AdvocateClerkFilingsTab> {
                 ),
                 ElevatedButton.icon(
                   onPressed: () {
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      builder: (ctx) {
+                        return Container(
+                          padding: const EdgeInsets.only(top: 16),
+                          height: MediaQuery.of(context).size.height * 0.8,
+                          child: Column(
+                            children: [
+                              Text('Case Evidence: ${legalCase.title}', style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold)),
+                              const Divider(),
+                              Expanded(child: SecureEvidenceViewer(caseId: legalCase.id)),
+                            ],
+                          ),
+                        );
+                      }
+                    );
+                  },
+                  icon: const Icon(Icons.security),
+                  label: const Text('Evidence'),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, foregroundColor: Colors.white),
+                ),
+                ElevatedButton.icon(
+                  onPressed: () {
                     final shareText = 'Case: ${legalCase.id}\nTitle: ${legalCase.title}\nStatus: ${legalCase.status}\nDocuments Checked: ${documents.length}\nAll Verified: $allVerified';
                     Share.share(shareText);
                   },
                   icon: const Icon(Icons.share, size: 18),
                   label: const Text('Share Status'),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, foregroundColor: Colors.white),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white),
                 ),
               ],
             );
