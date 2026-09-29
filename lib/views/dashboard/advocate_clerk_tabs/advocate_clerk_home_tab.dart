@@ -97,12 +97,16 @@ class AdvocateClerkHomeTab extends StatelessWidget {
   Widget _buildDashboardHeader(BuildContext context, String role) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.only(top: 60, left: 24, right: 24, bottom: 32),
       decoration: const BoxDecoration(
-        color: Color(0xFF0D256C), // Deep blue matching the screenshot
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF0D256C), Color(0xFF1A3B99)],
+        ),
         borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(24),
-          bottomRight: Radius.circular(24),
+          bottomLeft: Radius.circular(32),
+          bottomRight: Radius.circular(32),
         ),
       ),
       child: Row(
@@ -113,25 +117,30 @@ class AdvocateClerkHomeTab extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Welcome back, $role!',
-                  style: GoogleFonts.outfit(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
+                  'Welcome back,\n$role!',
+                  style: GoogleFonts.outfit(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    height: 1.2,
+                  ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 Text(
-                  'Here\'s what\'s happening with your\nplatform today.',
-                  style: GoogleFonts.inter(fontSize: 14, color: Colors.white70),
+                  'Here\'s what\'s happening with your platform today.',
+                  style: GoogleFonts.inter(fontSize: 15, color: Colors.white.withOpacity(0.8)),
                 ),
               ],
             ),
           ),
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.1),
+              color: Colors.white.withOpacity(0.15),
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.amber, width: 1.5),
+              border: Border.all(color: Colors.amber.withOpacity(0.8), width: 2),
             ),
-            child: const Icon(Icons.account_balance, color: Colors.amber, size: 32),
+            child: const Icon(Icons.account_balance, color: Colors.amber, size: 36),
           )
         ],
       ),
@@ -142,36 +151,53 @@ class AdvocateClerkHomeTab extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: color.withOpacity(0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
           ),
         ],
+        border: Border.all(color: color.withOpacity(0.1), width: 1),
       ),
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: color.shade50,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: color.shade700, size: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [color.shade400, color.shade600],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: color.withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Icon(icon, color: Colors.white, size: 24),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           Text(
             value,
-            style: GoogleFonts.outfit(fontSize: 28, fontWeight: FontWeight.bold, color: const Color(0xFF0D256C)),
+            style: GoogleFonts.outfit(fontSize: 32, fontWeight: FontWeight.bold, color: const Color(0xFF0D256C)),
           ),
           Text(
             title,
-            style: GoogleFonts.inter(fontSize: 13, color: Colors.grey[600], fontWeight: FontWeight.w500),
+            style: GoogleFonts.inter(fontSize: 13, color: Colors.grey[600], fontWeight: FontWeight.w600),
           ),
         ],
       ),
