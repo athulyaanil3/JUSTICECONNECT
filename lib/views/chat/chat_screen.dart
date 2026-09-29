@@ -8,7 +8,13 @@ import '../../controllers/lawyer_provider.dart';
 import '../../controllers/notification_provider.dart';
 import '../../models/consultation_request.dart';
 import '../../models/app_notification.dart';
+import 'package:file_picker/file_picker.dart';
+import 'dart:io';
 import 'package:uuid/uuid.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../services/evidence_encryption_service.dart';
+import '../../services/pattern_verification_service.dart';
+import '../shared/secure_evidence_viewer.dart';
 
 class ChatScreen extends StatefulWidget {
   final String requestId;
@@ -72,6 +78,116 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       }
     });
+  }
+
+  Future<void> _uploadEncryptedFile() async {
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'mp4'],
+      );
+
+      if (result == null || result.isEmpty) return;
+      
+      final files = result.map((f) => File(f.path!)).toList();
+      
+      num totalSize = 0;
+      for (var f in files) {
+        totalSize += await f.length();
+      }
+      if (totalSize > 50 * 1024 * 1024) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Total file size must not exceed 50MB.')));
+        return;
+      }
+
+      // 🔐 Pattern Verification Before Sending 🔐
+      final isAuthenticated = await PatternVerificationService.authenticate(
+        context: context,
+        reason: 'Please draw your pattern to authorize this secure evidence transfer.',
+        userKey: Supabase.instance.client.auth.currentUser?.email,
+      );
+
+      if (!isAuthenticated) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Authentication failed. File not sent.')));
+        return;
+      }
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Encrypting & Sending securely...'),
+            ],
+          ),
+        ),
+      );
+
+      final encryptionService = EvidenceEncryptionService();
+      final encryptionResult = await encryptionService.encryptEvidencePackage(files);
+      
+      final documentId = const Uuid().v4();
+      final storagePath = '${widget.requestId}/$documentId.enc';
+      final supabase = Supabase.instance.client;
+
+      // Upload encrypted file as raw binary
+      await supabase.storage.from('case-evidence').upload(
+        storagePath, 
+        encryptionResult.encryptedFile,
+        fileOptions: const FileOptions(contentType: 'application/octet-stream'),
+      );
+
+      // Insert metadata
+      final userId = supabase.auth.currentUser!.id;
+      await supabase.from('case_documents').insert({
+        'id': documentId,
+        'case_id': widget.requestId,
+        'uploaded_by': userId,
+        'document_type': 'Evidence Package',
+        'document_name': 'Encrypted Chat Evidence',
+        'storage_path': storagePath,
+        'file_size': await encryptionResult.encryptedFile.length(),
+        'mime_type': 'application/octet-stream',
+        'encryption_algorithm': encryptionResult.algorithm,
+        'encryption_version': encryptionResult.version,
+        'encrypted_key': encryptionResult.keyBase64,
+        'nonce': encryptionResult.nonceBase64,
+        'verification_status': 'Pending',
+      });
+
+      // Cleanup temp encrypted file
+      if (await encryptionResult.encryptedFile.exists()) {
+        await encryptionResult.encryptedFile.delete();
+      }
+
+      if (mounted) Navigator.pop(context); // Close loading
+
+      // Send chat message
+      final message = {
+        'text': '[ENCRYPTED_FILE]',
+        'sender': widget.isLawyer ? 'Lawyer' : 'Citizen',
+        'time': 'Just now',
+      };
+      Provider.of<RequestProvider>(context, listen: false)
+          .addMessageToRequest(widget.requestId, message);
+
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent + 100,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      debugPrint('Upload error: $e');
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+    }
   }
 
   void _showTakeCaseDialog(BuildContext context, ConsultationRequest request) async {
@@ -279,14 +395,43 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Column(
           crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
-            Text(
-              message,
-              style: GoogleFonts.inter(
-                color: isMe ? Colors.white : Colors.black87,
-                fontSize: 15,
-                height: 1.4,
+            if (message == '[ENCRYPTED_FILE]')
+              ElevatedButton.icon(
+                onPressed: () {
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    builder: (ctx) {
+                      return Container(
+                        padding: const EdgeInsets.only(top: 16),
+                        height: MediaQuery.of(context).size.height * 0.8,
+                        child: Column(
+                          children: [
+                            Text('Encrypted Evidence', style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold)),
+                            const Divider(),
+                            Expanded(child: SecureEvidenceViewer(caseId: widget.requestId)),
+                          ],
+                        ),
+                      );
+                    }
+                  );
+                },
+                icon: const Icon(Icons.lock, size: 16),
+                label: const Text('View Encrypted File'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isMe ? Colors.white : Theme.of(context).primaryColor,
+                  foregroundColor: isMe ? Theme.of(context).primaryColor : Colors.white,
+                ),
+              )
+            else
+              Text(
+                message,
+                style: GoogleFonts.inter(
+                  color: isMe ? Colors.white : Colors.black87,
+                  fontSize: 15,
+                  height: 1.4,
+                ),
               ),
-            ),
             const SizedBox(height: 4),
             Text(
               time,
@@ -319,46 +464,7 @@ class _ChatScreenState extends State<ChatScreen> {
           children: [
             IconButton(
               icon: Icon(Icons.attach_file, color: Colors.grey[600]),
-              onPressed: () { 
-                showModalBottomSheet(
-                  context: context,
-                  builder: (context) {
-                    return SafeArea(
-                      child: Wrap(
-                        children: [
-                          ListTile(
-                            leading: const Icon(Icons.picture_as_pdf, color: Colors.red),
-                            title: const Text('Upload PDF Document'),
-                            onTap: () {
-                              Navigator.pop(context);
-                              _messageController.text = '[Document] case_details.pdf';
-                              _sendMessage();
-                            },
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.image, color: Colors.blue),
-                            title: const Text('Upload Image'),
-                            onTap: () {
-                              Navigator.pop(context);
-                              _messageController.text = '[Image] evidence_photo.jpg';
-                              _sendMessage();
-                            },
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.camera_alt, color: Colors.green),
-                            title: const Text('Take a Photo'),
-                            onTap: () {
-                              Navigator.pop(context);
-                              _messageController.text = '[Photo] IMG_20260926.jpg';
-                              _sendMessage();
-                            },
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-                );
-              },
+              onPressed: _uploadEncryptedFile,
             ),
             Expanded(
               child: TextField(
