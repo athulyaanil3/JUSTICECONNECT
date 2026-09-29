@@ -13,22 +13,33 @@ class NotificationProvider with ChangeNotifier {
   int get unreadCount => _notifications.where((n) => !n.isRead).length;
   String? get currentTargetUser => _currentTargetUser;
 
+  RealtimeChannel? _channel;
+
   void _setupRealtime(String targetUser) {
     if (_isListening && _currentTargetUser == targetUser) return;
+    
+    // If we're already listening to another user's notifications, unsubscribe first
+    if (_channel != null) {
+      _supabase.removeChannel(_channel!);
+    }
+
     _isListening = true;
     _currentTargetUser = targetUser;
     
-    _supabase
+    _channel = _supabase
         .channel('public:app_notifications_$targetUser')
         .onPostgresChanges(
           event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'app_notifications',
-          // Note: In Supabase, Postgres changes filtering by column value requires RLS or specific setup, 
-          // so we'll just fetch again whenever there's ANY change, or we could just filter in the client.
-          // To be safe and keep it simple:
+          // Optional: we can add a filter here, but we will always fetch again
           callback: (payload) {
-            fetchNotifications(targetUser);
+            // Because targetUser is captured in this closure, we must ensure it matches
+            // the currently active user, though since we remove the old channel, this
+            // closure should only fire for the correct channel.
+            if (_currentTargetUser == targetUser) {
+              fetchNotifications(targetUser);
+            }
           },
         )
         .subscribe();

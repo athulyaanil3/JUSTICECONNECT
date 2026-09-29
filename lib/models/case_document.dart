@@ -8,6 +8,13 @@ class CaseDocument {
   final String verificationStatus; // 'Pending', 'Verified', 'Missing', 'Invalid'
   final String remarks;
   final DateTime createdAt;
+  final String? storagePath;
+  final int? fileSize;
+  final String? mimeType;
+  final String? encryptionAlgorithm;
+  final String? encryptionVersion;
+  final String? encryptedKey;
+  final String? nonce;
 
   CaseDocument({
     required this.id,
@@ -19,6 +26,13 @@ class CaseDocument {
     required this.verificationStatus,
     required this.remarks,
     required this.createdAt,
+    this.storagePath,
+    this.fileSize,
+    this.mimeType,
+    this.encryptionAlgorithm,
+    this.encryptionVersion,
+    this.encryptedKey,
+    this.nonce,
   });
 
   factory CaseDocument.fromJson(Map<String, dynamic> json) {
@@ -32,6 +46,13 @@ class CaseDocument {
       verificationStatus: json['verification_status'] ?? 'Pending',
       remarks: json['remarks'] ?? '',
       createdAt: DateTime.parse(json['created_at']),
+      storagePath: json['storage_path'],
+      fileSize: json['file_size'],
+      mimeType: json['mime_type'],
+      encryptionAlgorithm: json['encryption_algorithm'],
+      encryptionVersion: json['encryption_version'],
+      encryptedKey: json['encrypted_key'],
+      nonce: json['nonce'],
     );
   }
 
@@ -46,6 +67,13 @@ class CaseDocument {
       'verification_status': verificationStatus,
       'remarks': remarks,
       'created_at': createdAt.toIso8601String(),
+      if (storagePath != null) 'storage_path': storagePath,
+      if (fileSize != null) 'file_size': fileSize,
+      if (mimeType != null) 'mime_type': mimeType,
+      if (encryptionAlgorithm != null) 'encryption_algorithm': encryptionAlgorithm,
+      if (encryptionVersion != null) 'encryption_version': encryptionVersion,
+      if (encryptedKey != null) 'encrypted_key': encryptedKey,
+      if (nonce != null) 'nonce': nonce,
     };
   }
 }

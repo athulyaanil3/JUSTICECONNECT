@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/encryption_service.dart';
 import '../models/consultation_request.dart';
 import 'package:uuid/uuid.dart';
 
@@ -72,7 +73,7 @@ class RequestProvider with ChangeNotifier {
         List<Map<String, dynamic>> messages = [];
         for (var msgRow in messagesResponse) {
           messages.add({
-            'text': msgRow['text'],
+            'text': EncryptionService.decryptText(msgRow['text']),
             'sender': msgRow['sender'],
             'time': msgRow['created_at'].toString().substring(11, 16), // simple time parsing
           });
@@ -124,12 +125,22 @@ class RequestProvider with ChangeNotifier {
         'requested_at': request.requestedAt.toIso8601String(),
       });
       
-      // Send notification
+      // Send notification to lawyer
       await _supabase.from('app_notifications').insert({
         'id': Uuid().v4(),
         'target_user': request.lawyerName,
         'title': 'New Consultation Request',
         'message': '${request.citizenName} has requested a consultation regarding: ${request.issueDescription}',
+        'is_read': false,
+        'action_payload': request.id,
+      });
+
+      // Send notification to citizen (user)
+      await _supabase.from('app_notifications').insert({
+        'id': Uuid().v4(),
+        'target_user': request.citizenName,
+        'title': 'Request Sent',
+        'message': 'You have sent a consultation request to ${request.lawyerName}.',
         'is_read': false,
         'action_payload': request.id,
       });
@@ -234,7 +245,7 @@ class RequestProvider with ChangeNotifier {
       await _supabase.from('chat_messages').insert({
         'request_id': id,
         'sender': message['sender'],
-        'text': message['text'],
+        'text': EncryptionService.encryptText(message['text']),
       });
       await fetchRequests(); // Refresh list to get accurate timestamps from DB
     } catch (e) {

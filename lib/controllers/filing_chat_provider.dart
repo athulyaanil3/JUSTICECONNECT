@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/encryption_service.dart';
 
 class FilingChatProvider with ChangeNotifier {
   final _supabase = Supabase.instance.client;
@@ -23,10 +24,17 @@ class FilingChatProvider with ChangeNotifier {
           .eq('filing_id', filingId)
           .order('created_at', ascending: true);
 
-      _messages = List<Map<String, dynamic>>.from(response);
+      final List<Map<String, dynamic>> decryptedMessages = [];
+      for (var msg in response) {
+        final newMsg = Map<String, dynamic>.from(msg);
+        newMsg['text'] = EncryptionService.decryptText(newMsg['text'] ?? '');
+        decryptedMessages.add(newMsg);
+      }
+      
+      _messages = decryptedMessages;
       _setupRealtime(filingId);
     } catch (e) {
-      debugPrint('Error loading filing chat: $e');
+      debugPrint('Error loading filing chat: ');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -36,7 +44,7 @@ class FilingChatProvider with ChangeNotifier {
   void _setupRealtime(String filingId) {
     _subscription?.unsubscribe();
     _subscription = _supabase
-        .channel('public:filing_messages:filing_id=eq.$filingId')
+        .channel('public:filing_messages:filing_id=eq.')
         .onPostgresChanges(
           event: PostgresChangeEvent.insert,
           schema: 'public',
@@ -47,7 +55,9 @@ class FilingChatProvider with ChangeNotifier {
             value: filingId,
           ),
           callback: (payload) {
-            final newMessage = payload.newRecord;
+            final newMessage = Map<String, dynamic>.from(payload.newRecord);
+            newMessage['text'] = EncryptionService.decryptText(newMessage['text'] ?? '');
+            
             // Prevent duplicate insertion if the current user just sent it
             if (!_messages.any((m) => m['id'] == newMessage['id'])) {
               _messages.add(newMessage);
@@ -65,17 +75,21 @@ class FilingChatProvider with ChangeNotifier {
       final user = _supabase.auth.currentUser;
       if (user == null) throw Exception('User not logged in');
 
+      final plainText = text.trim();
+      final encryptedText = EncryptionService.encryptText(plainText);
+
       final newMessage = {
         'filing_id': _currentFilingId,
         'sender_role': senderRole,
         'sender_id': user.id,
-        'text': text.trim(),
+        'text': encryptedText,
       };
 
       // Optimistically add the message to the UI
       final tempMessage = {
         ...newMessage,
-        'id': 'temp_${DateTime.now().millisecondsSinceEpoch}',
+        'text': plainText, // Display unencrypted text locally immediately
+        'id': 'temp_',
         'created_at': DateTime.now().toIso8601String(),
       };
       
@@ -91,12 +105,14 @@ class FilingChatProvider with ChangeNotifier {
       // Replace temp message with actual response
       final index = _messages.indexWhere((m) => m['id'] == tempMessage['id']);
       if (index != -1) {
-        _messages[index] = response;
+        final decryptedResponse = Map<String, dynamic>.from(response);
+        decryptedResponse['text'] = EncryptionService.decryptText(decryptedResponse['text'] ?? '');
+        _messages[index] = decryptedResponse;
         notifyListeners();
       }
 
     } catch (e) {
-      debugPrint('Error sending filing message: $e');
+      debugPrint('Error sending filing message: ');
       // Optionally remove temp message on failure
     }
   }
