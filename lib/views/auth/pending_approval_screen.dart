@@ -4,11 +4,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:justice_connect/views/auth/unified_auth_screen.dart';
 import '../dashboard/lawyer_dashboard.dart';
 import '../dashboard/advocate_clerk_dashboard.dart';
+import 'lawyer_verification_screen.dart' as justice_connect_lawyer;
+import 'advocate_clerk_verification_screen.dart' as justice_connect_clerk;
 
 class PendingApprovalScreen extends StatefulWidget {
   final bool isRejected;
+  final String? role;
   
-  const PendingApprovalScreen({Key? key, this.isRejected = false}) : super(key: key);
+  const PendingApprovalScreen({Key? key, this.isRejected = false, this.role}) : super(key: key);
 
   @override
   _PendingApprovalScreenState createState() => _PendingApprovalScreenState();
@@ -183,6 +186,42 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
                           ),
                         ),
                         const SizedBox(height: 32),
+                        
+                        if (_isRejected) ...[
+                          SizedBox(
+                            width: double.infinity,
+                            height: 56,
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                if (widget.role == 'Lawyer') {
+                                  Navigator.push(context, MaterialPageRoute(builder: (_) => const justice_connect_lawyer.LawyerVerificationScreen()));
+                                } else if (widget.role == 'Advocate Clerk') {
+                                  Navigator.push(context, MaterialPageRoute(builder: (_) => const justice_connect_clerk.AdvocateClerkVerificationScreen()));
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Unknown role to resubmit.')));
+                                }
+                              },
+                              icon: const Icon(Icons.refresh, color: Colors.white),
+                              label: Text(
+                                'Resubmit Application',
+                                style: GoogleFonts.inter(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Theme.of(context).primaryColor,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
                         
                         // Logout Button
                         SizedBox(

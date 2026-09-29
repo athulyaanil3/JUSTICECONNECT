@@ -81,6 +81,22 @@ class _AdvocateClerkVerificationScreenState extends State<AdvocateClerkVerificat
             ? userMeta['username'] 
             : 'Unknown';
 
+        String? uploadedDocName;
+        if (_selectedFile != null) {
+          try {
+            final originalName = _selectedFile!.path.split(Platform.pathSeparator).last.replaceAll(' ', '_');
+            uploadedDocName = 'clerk_verification_${user.id}_$originalName';
+            await Supabase.instance.client.storage.from('documents').upload(
+              uploadedDocName, 
+              _selectedFile!,
+              fileOptions: const FileOptions(upsert: true),
+            );
+          } catch (storageErr) {
+            // Throw so the outer catch block catches it and shows the SnackBar
+            throw Exception('Storage error: Please ensure the "documents" bucket exists and is public in Supabase. Details: $storageErr');
+          }
+        }
+
         await Supabase.instance.client.from('profiles').upsert({
           'id': user.id,
           'username': username,
@@ -90,17 +106,8 @@ class _AdvocateClerkVerificationScreenState extends State<AdvocateClerkVerificat
           'court_district': _selectedDistrict,
           'is_verified': null,
           'associated_lawyer_id': lawyerId,
+          if (uploadedDocName != null) 'verification_document': uploadedDocName,
         });
-
-        if (_selectedFile != null) {
-          try {
-            final fileExt = _selectedFile!.path.split('.').last;
-            final fileName = 'clerk_verification_${user.id}_${DateTime.now().millisecondsSinceEpoch}.$fileExt';
-            await Supabase.instance.client.storage.from('documents').upload(fileName, _selectedFile!);
-          } catch (storageErr) {
-            debugPrint('Storage error (ignoring for test): $storageErr');
-          }
-        }
 
         // Notify the lawyer
         await Supabase.instance.client.from('app_notifications').insert({
@@ -135,8 +142,7 @@ class _AdvocateClerkVerificationScreenState extends State<AdvocateClerkVerificat
   void _pickDocument() async {
     try {
       PlatformFile? result = await FilePicker.pickFile(
-        type: FileType.custom,
-        allowedExtensions: ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'],
+        type: FileType.any,
       );
 
       if (result != null && result.path != null) {
