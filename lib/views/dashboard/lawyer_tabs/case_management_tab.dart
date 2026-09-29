@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../controllers/lawyer_provider.dart';
 import '../../../models/legal_case.dart';
 import '../chat/filing_chat_screen.dart';
+import '../../shared/secure_evidence_viewer.dart';
 
 class CaseManagementTab extends StatefulWidget {
   const CaseManagementTab({Key? key}) : super(key: key);
@@ -13,6 +14,13 @@ class CaseManagementTab extends StatefulWidget {
 }
 
 class _CaseManagementTabState extends State<CaseManagementTab> {
+  final List<String> _caseCategories = [
+    'Civil', 'Criminal', 'Family Law', 'Corporate', 'Real Estate', 
+    'Labor & Employment', 'Tax', 'Constitutional', 'Intellectual Property', 
+    'Immigration', 'Bankruptcy', 'Personal Injury', 'Environmental', 
+    'Medical Malpractice', 'General'
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -45,6 +53,30 @@ class _CaseManagementTabState extends State<CaseManagementTab> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   TextField(controller: caseNumberController, decoration: const InputDecoration(labelText: 'Case Number', hintText: 'e.g. WP(C) 123/2026')),
+                  const SizedBox(height: 12),
+                  Autocomplete<String>(
+                    optionsBuilder: (TextEditingValue textEditingValue) {
+                      if (textEditingValue.text.isEmpty) {
+                        return _caseCategories;
+                      }
+                      return _caseCategories.where((String option) {
+                        return option.toLowerCase().contains(textEditingValue.text.toLowerCase());
+                      });
+                    },
+                    onSelected: (String selection) {
+                      categoryController.text = selection;
+                    },
+                    fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                      controller.addListener(() {
+                        categoryController.text = controller.text;
+                      });
+                      return TextField(
+                        controller: controller,
+                        focusNode: focusNode,
+                        decoration: const InputDecoration(labelText: 'Case Category', hintText: 'Type or select category'),
+                      );
+                    },
+                  ),
                   TextField(controller: clientController, decoration: const InputDecoration(labelText: 'Client Username (Optional)', hintText: 'e.g. johndoe')),
                   TextField(controller: courtNameController, decoration: const InputDecoration(labelText: 'Court Name', hintText: 'e.g. High Court')),
                   TextField(controller: petitionerController, decoration: const InputDecoration(labelText: 'Petitioner Name')),
@@ -74,7 +106,7 @@ class _CaseManagementTabState extends State<CaseManagementTab> {
                     setState(() => isSubmitting = true);
                     await Provider.of<LawyerProvider>(context, listen: false).addOfficialCase(
                       caseNumberController.text, // Title
-                      'General', // Category
+                      categoryController.text.isNotEmpty ? categoryController.text : 'General', // Category
                       'Officially imported case', // Description
                       clientController.text.trim(), // Client ID (Username)
                       caseNumberController.text,
@@ -135,70 +167,6 @@ class _CaseManagementTabState extends State<CaseManagementTab> {
     );
   }
 
-  void _showUpdateStatusDialog(BuildContext context, LegalCase c) {
-    String selectedStatus = c.status;
-    final descriptionController = TextEditingController();
-    
-    final statuses = [
-      'Submitted', 
-      'Correction Submitted',
-      'Documents Uploaded',
-      'Ready for Review',
-      'Approved for Filing'
-    ];
-    if (!statuses.contains(selectedStatus)) {
-      statuses.add(selectedStatus);
-    }
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setState) {
-          return AlertDialog(
-            title: const Text('Update Case Status'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  DropdownButtonFormField<String>(
-                    value: selectedStatus,
-                    items: statuses.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-                    onChanged: (val) {
-                      if (val != null) setState(() => selectedStatus = val);
-                    },
-                    decoration: const InputDecoration(labelText: 'New Status'),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: descriptionController,
-                    decoration: const InputDecoration(labelText: 'Update Description (Sent to Clerk/User)'),
-                    maxLines: 3,
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-              ElevatedButton(
-                onPressed: () async {
-                  if (descriptionController.text.isNotEmpty) {
-                    await Provider.of<LawyerProvider>(context, listen: false).updateCaseStatus(
-                      c.id,
-                      selectedStatus,
-                      descriptionController.text,
-                    );
-                    if (context.mounted) Navigator.pop(ctx);
-                  }
-                },
-                child: const Text('Update'),
-              )
-            ],
-          );
-        }
-      ),
-    );
-  }
-
   void _confirmDeleteCase(BuildContext context, LegalCase c) {
     showDialog(
       context: context,
@@ -220,6 +188,26 @@ class _CaseManagementTabState extends State<CaseManagementTab> {
           )
         ],
       ),
+    );
+  }
+
+  void _showSecureEvidence(BuildContext context, LegalCase c) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return Container(
+          padding: const EdgeInsets.only(top: 16),
+          height: MediaQuery.of(context).size.height * 0.8,
+          child: Column(
+            children: [
+              Text('Case Evidence: ${c.title}', style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold)),
+              const Divider(),
+              Expanded(child: SecureEvidenceViewer(caseId: c.id)),
+            ],
+          ),
+        );
+      }
     );
   }
 
@@ -468,7 +456,7 @@ class _CaseManagementTabState extends State<CaseManagementTab> {
                 if (c.status == 'Ready for Court' || c.status == 'Ongoing' || c.caseNumber.isEmpty)
                   _buildActionIcon(context, Icons.gavel, 'Official Info', () => _showAddOfficialDetailsDialog(context, c)),
                 _buildActionIcon(context, Icons.history, 'Timeline', () => _showCaseUpdates(context, c)),
-                _buildActionIcon(context, Icons.update, 'Update', () => _showUpdateStatusDialog(context, c)),
+                _buildActionIcon(context, Icons.security, 'Evidence', () => _showSecureEvidence(context, c), color: Colors.teal),
                 _buildActionIcon(context, Icons.assignment_ind, 'Assign Clerk', () => _showAssignClerkDialog(context, c)),
                 _buildActionIcon(context, Icons.delete_outline, 'Delete', () => _confirmDeleteCase(context, c), color: Colors.redAccent),
               ],
