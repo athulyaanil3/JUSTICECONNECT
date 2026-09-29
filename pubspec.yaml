@@ -44,6 +44,13 @@ dependencies:
   image_picker: ^1.2.3
   file_picker: ^13.1.0
   share_plus: ^13.3.0
+  url_launcher: ^6.3.2
+  cryptography: ^2.9.0
+  path_provider: ^2.1.6
+  open_filex: ^4.7.0
+  encrypt: ^5.0.3
+  archive: ^4.3.0
+  syncfusion_flutter_pdfviewer: ^34.2.9
 
 dev_dependencies:
   flutter_test:

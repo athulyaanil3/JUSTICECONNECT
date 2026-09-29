@@ -75,7 +75,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                 );
               } else {
                 Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => PendingApprovalScreen(isRejected: isVerified == false)),
+                  MaterialPageRoute(builder: (_) => PendingApprovalScreen(isRejected: isVerified == false, role: role)),
                   (route) => false,
                 );
               }
@@ -88,7 +88,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                 );
               } else {
                 Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => PendingApprovalScreen(isRejected: isVerified == false)),
+                  MaterialPageRoute(builder: (_) => PendingApprovalScreen(isRejected: isVerified == false, role: role)),
                   (route) => false,
                 );
               }
