@@ -58,83 +58,95 @@ class _AdvocateClerkDashboardState extends State<AdvocateClerkDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        title: Text(
-          'Clerk Console',
-          style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 1,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_none, color: Colors.black87),
-            onPressed: () {
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const AdvocateClerkNotificationsScreen()));
-            },
+    return PopScope(
+      canPop: _currentIndex == 0,
+      onPopInvoked: (didPop) {
+        if (didPop) {
+          return;
+        }
+        setState(() {
+          _currentIndex = 0;
+        });
+        _updateSecurity();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.grey[50],
+        appBar: AppBar(
+          title: Text(
+            'Clerk Console',
+            style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
           ),
-          // Profile handles logout now
-        ],
-      ),
-      body: _tabs[_currentIndex],
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, -5),
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black,
+          elevation: 1,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.notifications_none, color: Colors.black87),
+              onPressed: () {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const AdvocateClerkNotificationsScreen()));
+              },
             ),
+            // Profile handles logout now
           ],
         ),
-        child: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          onTap: (index) {
-            setState(() {
-              _currentIndex = index;
-            });
-            _updateSecurity();
-          },
-          type: BottomNavigationBarType.fixed,
-          backgroundColor: Colors.white,
-          selectedItemColor: Theme.of(context).primaryColor,
-          unselectedItemColor: Colors.grey[400],
-          selectedLabelStyle: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 12),
-          unselectedLabelStyle: GoogleFonts.inter(fontWeight: FontWeight.normal, fontSize: 12),
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.dashboard_outlined),
-              activeIcon: Icon(Icons.dashboard),
-              label: 'Dashboard',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.folder_outlined),
-              activeIcon: Icon(Icons.folder),
-              label: 'Filings',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.gavel_outlined),
-              activeIcon: Icon(Icons.gavel),
-              label: 'Cases',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.list_alt_outlined),
-              activeIcon: Icon(Icons.list_alt),
-              label: 'Causelist',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.calendar_month_outlined),
-              activeIcon: Icon(Icons.calendar_month),
-              label: 'Hearings',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.person_outline),
-              activeIcon: Icon(Icons.person),
-              label: 'Profile',
-            ),
-          ],
+        body: _tabs[_currentIndex],
+        bottomNavigationBar: Container(
+          decoration: BoxDecoration(
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, -5),
+              ),
+            ],
+          ),
+          child: BottomNavigationBar(
+            currentIndex: _currentIndex,
+            onTap: (index) {
+              setState(() {
+                _currentIndex = index;
+              });
+              _updateSecurity();
+            },
+            type: BottomNavigationBarType.fixed,
+            backgroundColor: Colors.white,
+            selectedItemColor: Theme.of(context).primaryColor,
+            unselectedItemColor: Colors.grey[400],
+            selectedLabelStyle: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 12),
+            unselectedLabelStyle: GoogleFonts.inter(fontWeight: FontWeight.normal, fontSize: 12),
+            items: const [
+              BottomNavigationBarItem(
+                icon: Icon(Icons.dashboard_outlined),
+                activeIcon: Icon(Icons.dashboard),
+                label: 'Dashboard',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.folder_outlined),
+                activeIcon: Icon(Icons.folder),
+                label: 'Filings',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.gavel_outlined),
+                activeIcon: Icon(Icons.gavel),
+                label: 'Cases',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.list_alt_outlined),
+                activeIcon: Icon(Icons.list_alt),
+                label: 'Causelist',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.calendar_month_outlined),
+                activeIcon: Icon(Icons.calendar_month),
+                label: 'Hearings',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.person_outline),
+                activeIcon: Icon(Icons.person),
+                label: 'Profile',
+              ),
+            ],
+          ),
         ),
       ),
     );
