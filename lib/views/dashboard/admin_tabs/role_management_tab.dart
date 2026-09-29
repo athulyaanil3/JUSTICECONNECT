@@ -163,20 +163,13 @@ class _RoleManagementTabState extends State<RoleManagementTab> {
                             style: GoogleFonts.inter(color: Colors.grey[600]),
                           ),
                           isThreeLine: true,
-                          trailing: DropdownButton<String>(
-                            value: _availableRoles.contains(currentRole) ? currentRole : null,
-                            hint: const Text('Assign Role'),
-                            items: _availableRoles.map((String role) {
-                              return DropdownMenuItem<String>(
-                                value: role,
-                                child: Text(role),
-                              );
-                            }).toList(),
-                            onChanged: (String? newRole) {
-                              if (newRole != null && newRole != currentRole) {
-                                _updateUserRole(user['id'], newRole);
-                              }
-                            },
+                          trailing: Chip(
+                            label: Text(
+                              currentRole,
+                              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                            backgroundColor: Colors.purple.withOpacity(0.1),
+                            side: BorderSide.none,
                           ),
                         ),
                       );

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 
 class LawyerManagementTab extends StatefulWidget {
   const LawyerManagementTab({Key? key}) : super(key: key);
@@ -87,10 +89,10 @@ class _LawyerManagementTabState extends State<LawyerManagementTab> with SingleTi
                 const Divider(height: 32),
                 Text('Verification Details', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16)),
                 const SizedBox(height: 12),
-                // Since this might not be in DB yet, we mock the display if null
-                _buildDetailRow('Enrollment Number', lawyer['enrollment_number'] ?? 'K/1234/2020 (Mock)'),
-                _buildDetailRow('Year', lawyer['enrollment_year']?.toString() ?? '2020 (Mock)'),
-                _buildDetailRow('District', lawyer['district'] ?? 'Ernakulam (Mock)'),
+                // Display actual DB data or explicitly say 'Not Provided'
+                _buildDetailRow('Enrollment Number', lawyer['enrollment_number']?.toString() ?? 'Not Provided'),
+                _buildDetailRow('Year', lawyer['enrollment_year']?.toString() ?? 'Not Provided'),
+                _buildDetailRow('District', lawyer['district']?.toString() ?? 'Not Provided'),
                 const SizedBox(height: 16),
                 Text('Uploaded Documents', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
@@ -106,17 +108,88 @@ class _LawyerManagementTabState extends State<LawyerManagementTab> with SingleTi
                       const Icon(Icons.picture_as_pdf, color: Colors.red),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: Text(
-                          'bar_council_certificate.pdf',
-                          style: GoogleFonts.inter(color: Colors.blue[700], decoration: TextDecoration.underline),
+                        child: Builder(
+                          builder: (context) {
+                            String displayName = 'No document uploaded';
+                            final rawName = lawyer['verification_document'];
+                            if (rawName != null) {
+                              final parts = rawName.toString().split('_');
+                              if (parts.length > 2) {
+                                displayName = parts.sublist(2).join('_');
+                              } else {
+                                displayName = rawName;
+                              }
+                            }
+                            return Text(
+                              displayName,
+                              style: GoogleFonts.inter(
+                                color: rawName != null ? Colors.blue[700] : Colors.grey, 
+                                decoration: rawName != null ? TextDecoration.underline : TextDecoration.none
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            );
+                          }
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.download),
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Downloading document...')),
-                          );
+                        icon: const Icon(Icons.visibility, color: Colors.blue),
+                        tooltip: 'View Document',
+                        onPressed: () async {
+                          final docName = lawyer['verification_document'];
+                          if (docName != null) {
+                            try {
+                              // Use getPublicUrl because createSignedUrl fails if there is no SELECT RLS policy
+                              final url = Supabase.instance.client.storage.from('documents').getPublicUrl(docName);
+                              
+                              if (!mounted) return;
+                              final ext = docName.split('.').last.toLowerCase();
+                              final isPdf = ext == 'pdf';
+                              
+                              if (ext == 'jpg' || ext == 'jpeg' || ext == 'png' || isPdf) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => FullScreenDocumentViewer(url: url, isPdf: isPdf),
+                                  ),
+                                );
+                              } else {
+                                try {
+                                  final uri = Uri.parse(url);
+                                  bool launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                  if (!launched) {
+                                    launched = await launchUrl(uri, mode: LaunchMode.platformDefault);
+                                  }
+                                  if (!launched) {
+                                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to open file. Please fully RESTART the app (not hot reload).')));
+                                  }
+                                } catch (e) {
+                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e (Try fully restarting the app)')));
+                                }
+                              }
+                            } catch (e) {
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not generate URL. Check Supabase permissions: $e')));
+                            }
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No document uploaded')));
+                          }
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.download, color: Colors.green),
+                        tooltip: 'Download Document',
+                        onPressed: () async {
+                          final docName = lawyer['verification_document'];
+                          if (docName != null) {
+                            try {
+                              final url = Supabase.instance.client.storage.from('documents').getPublicUrl(docName);
+                              await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                            } catch (e) {
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not download file: $e')));
+                            }
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No document uploaded')));
+                          }
                         },
                       ),
                     ],
@@ -128,24 +201,26 @@ class _LawyerManagementTabState extends State<LawyerManagementTab> with SingleTi
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              child: const Text('Close'),
             ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _updateLawyerStatus(lawyer['id'], false); // Reject/Suspend
-              },
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
-              child: const Text('Reject'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _updateLawyerStatus(lawyer['id'], true); // Approve
-              },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-              child: const Text('Approve'),
-            ),
+            if (lawyer['is_verified'] != false) 
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _updateLawyerStatus(lawyer['id'], false); // Reject/Suspend
+                },
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                child: Text(lawyer['is_verified'] == true ? 'Suspend' : 'Reject'),
+              ),
+            if (lawyer['is_verified'] != true)
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _updateLawyerStatus(lawyer['id'], true); // Approve
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                child: const Text('Approve'),
+              ),
           ],
         );
       },
@@ -243,6 +318,7 @@ class _LawyerManagementTabState extends State<LawyerManagementTab> with SingleTi
                 style: GoogleFonts.inter(color: Colors.grey[600]),
               ),
               isThreeLine: true,
+              onTap: () => _showReviewDialog(lawyer),
               trailing: isVerified 
                 ? ElevatedButton(
                     style: ElevatedButton.styleFrom(
@@ -276,6 +352,61 @@ class _LawyerManagementTabState extends State<LawyerManagementTab> with SingleTi
           );
         },
       ),
+    );
+  }
+}
+
+class FullScreenDocumentViewer extends StatelessWidget {
+  final String url;
+  final bool isPdf;
+
+  const FullScreenDocumentViewer({
+    Key? key,
+    required this.url,
+    required this.isPdf,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text('Document Viewer', style: GoogleFonts.outfit(color: Colors.white)),
+      ),
+      body: isPdf
+          ? SfPdfViewer.network(url)
+          : Center(
+              child: InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 4.0,
+                child: Image.network(
+                  url,
+                  fit: BoxFit.contain,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return const Center(child: CircularProgressIndicator(color: Colors.white));
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.error_outline, color: Colors.red, size: 60),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Failed to load document.\nPlease ensure the bucket permissions are correct.',
+                            style: GoogleFonts.inter(color: Colors.white),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
     );
   }
 }
