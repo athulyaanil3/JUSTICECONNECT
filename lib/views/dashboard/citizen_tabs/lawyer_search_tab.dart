@@ -19,13 +19,45 @@ class LawyerSearchTab extends StatefulWidget {
 
 class _LawyerSearchTabState extends State<LawyerSearchTab> {
   final _supabase = Supabase.instance.client;
-  List<Map<String, dynamic>> _lawyers = [];
+  List<Map<String, dynamic>> _allLawyers = [];
+  List<Map<String, dynamic>> _filteredLawyers = [];
   bool _isLoading = true;
+  String _searchQuery = '';
+  String _sortBy = 'rating';
 
   @override
   void initState() {
     super.initState();
     _fetchLawyers();
+  }
+
+  void _applyFilters() {
+    List<Map<String, dynamic>> filtered = List.from(_allLawyers);
+
+    if (_searchQuery.isNotEmpty) {
+      filtered = filtered.where((lawyer) {
+        final name = (lawyer['username'] ?? '').toString().toLowerCase();
+        return name.contains(_searchQuery.toLowerCase());
+      }).toList();
+    }
+
+    if (_sortBy == 'rating') {
+      filtered.sort((a, b) {
+        final ratingA = (a['rating'] ?? 0).toDouble();
+        final ratingB = (b['rating'] ?? 0).toDouble();
+        return ratingB.compareTo(ratingA); // Descending
+      });
+    } else if (_sortBy == 'name') {
+      filtered.sort((a, b) {
+        final nameA = (a['username'] ?? '').toString().toLowerCase();
+        final nameB = (b['username'] ?? '').toString().toLowerCase();
+        return nameA.compareTo(nameB); // Ascending
+      });
+    }
+
+    setState(() {
+      _filteredLawyers = filtered;
+    });
   }
 
   Future<void> _fetchLawyers() async {
@@ -40,12 +72,13 @@ class _LawyerSearchTabState extends State<LawyerSearchTab> {
           .order('username', ascending: true);
 
       setState(() {
-        _lawyers = List<Map<String, dynamic>>.from(response);
+        _allLawyers = List<Map<String, dynamic>>.from(response);
+        _applyFilters();
       });
     } catch (e) {
       debugPrint('Error fetching verified lawyers: $e');
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -66,9 +99,7 @@ class _LawyerSearchTabState extends State<LawyerSearchTab> {
           actions: [
             IconButton(
               icon: const Icon(Icons.filter_list),
-              onPressed: () {
-                // Open filters
-              },
+              onPressed: _showFilterDialog,
             ),
           ],
           bottom: TabBar(
@@ -90,8 +121,12 @@ class _LawyerSearchTabState extends State<LawyerSearchTab> {
                   color: Colors.white,
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
                   child: TextField(
+                    onChanged: (value) {
+                      _searchQuery = value;
+                      _applyFilters();
+                    },
                     decoration: InputDecoration(
-                      hintText: 'Search by name, specialization, or location...',
+                      hintText: 'Search by name...',
                       hintStyle: GoogleFonts.inter(color: Colors.grey[400]),
                       prefixIcon: const Icon(Icons.search),
                       border: OutlineInputBorder(
@@ -111,18 +146,19 @@ class _LawyerSearchTabState extends State<LawyerSearchTab> {
                 Expanded(
                   child: _isLoading
                       ? const Center(child: CircularProgressIndicator())
-                      : _lawyers.isEmpty
+                      : _filteredLawyers.isEmpty
                           ? Center(
                               child: Text(
-                                'No verified lawyers found.',
+                                'No verified lawyers found matching your criteria.',
                                 style: GoogleFonts.inter(color: Colors.grey, fontSize: 16),
+                                textAlign: TextAlign.center,
                               ),
                             )
                           : ListView.builder(
                               padding: const EdgeInsets.all(20),
-                              itemCount: _lawyers.length,
+                              itemCount: _filteredLawyers.length,
                               itemBuilder: (context, index) {
-                                return _buildLawyerCard(context, _lawyers[index]);
+                                return _buildLawyerCard(context, _filteredLawyers[index]);
                               },
                             ),
                 ),
@@ -140,21 +176,56 @@ class _LawyerSearchTabState extends State<LawyerSearchTab> {
     final name = lawyer['username'] ?? 'Unknown Lawyer';
     final spec = 'General Practice'; // Hardcoded for now since spec isn't in profiles
     
-    return Card(
+    final requestProvider = Provider.of<RequestProvider>(context);
+    final alreadyBooked = requestProvider.requests.any((req) =>
+        req.lawyerName.toLowerCase() == name.toLowerCase() && 
+        req.status != 'Rejected' && 
+        req.status != 'Closed' && 
+        req.status != 'Completed' && 
+        req.status != 'Resolved');
+    
+    return Container(
       margin: const EdgeInsets.only(bottom: 16),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      elevation: 2,
-      shadowColor: Colors.black12,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
+          ),
+        ],
+        border: Border.all(color: Colors.grey[100]!, width: 1),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(20.0),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CircleAvatar(
-                  radius: 30,
-                  backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
-                  child: Icon(Icons.person, size: 36, color: Theme.of(context).primaryColor),
+                Hero(
+                  tag: 'avatar_${name}',
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Theme.of(context).primaryColor.withOpacity(0.2),
+                          blurRadius: 12,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                      border: Border.all(color: Colors.white, width: 3),
+                    ),
+                    child: CircleAvatar(
+                      radius: 36,
+                      backgroundColor: Theme.of(context).primaryColor,
+                      child: const Icon(Icons.person, size: 40, color: Colors.white),
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -163,11 +234,13 @@ class _LawyerSearchTabState extends State<LawyerSearchTab> {
                     children: [
                       Text(
                         name,
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.outfit(
                           fontWeight: FontWeight.bold,
-                          fontSize: 16,
+                          fontSize: 18,
                           color: Colors.black87,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -178,23 +251,36 @@ class _LawyerSearchTabState extends State<LawyerSearchTab> {
                           fontSize: 14,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Icon(Icons.star, size: 16, color: Colors.amber[600]),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${lawyer['rating'] ?? 'New'} (${lawyer['rating_count'] ?? 0} reviews)',
-                            style: GoogleFonts.inter(color: Colors.grey[600], fontSize: 12),
-                          ),
-                        ],
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.amber[50],
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.amber[200]!),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.star, size: 14, color: Colors.amber[600]),
+                            const SizedBox(width: 4),
+                            Text(
+                              "${lawyer['rating'] ?? 'New'} (${lawyer['rating_count'] ?? 0})",
+                              style: GoogleFonts.inter(
+                                color: Colors.amber[900],
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             Row(
               children: [
                 Expanded(
@@ -213,20 +299,26 @@ class _LawyerSearchTabState extends State<LawyerSearchTab> {
                     },
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Theme.of(context).primaryColor,
-                      side: BorderSide(color: Theme.of(context).primaryColor),
+                      side: BorderSide(color: Theme.of(context).primaryColor.withOpacity(0.3), width: 1.5),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
-                    child: const Text('View Profile'),
+                    child: Text('View Profile', style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14)),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () => _checkAndShowBookingDialog(context, name),
+                    onPressed: alreadyBooked ? null : () => _checkAndShowBookingDialog(context, name),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Theme.of(context).colorScheme.secondary,
-                      foregroundColor: Colors.black,
+                      backgroundColor: alreadyBooked ? Colors.grey[200] : Theme.of(context).colorScheme.secondary,
+                      foregroundColor: alreadyBooked ? Colors.grey[500] : Colors.black87,
+                      elevation: alreadyBooked ? 0 : 2,
+                      shadowColor: Theme.of(context).colorScheme.secondary.withOpacity(0.4),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
-                    child: const Text('Book Now'),
+                    child: Text(alreadyBooked ? 'Requested' : 'Send Request', style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14)),
                   ),
                 ),
               ],
@@ -338,6 +430,53 @@ class _LawyerSearchTabState extends State<LawyerSearchTab> {
           ),
         );
       },
+    );
+  }
+
+
+  void _showFilterDialog() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Sort & Filter', style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 20),
+              Text('Sort By', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+              RadioListTile<String>(
+                title: const Text('Rating (Highest First)'),
+                value: 'rating',
+                groupValue: _sortBy,
+                onChanged: (value) {
+                  Navigator.pop(context);
+                  setState(() {
+                    _sortBy = value!;
+                    _applyFilters();
+                  });
+                },
+              ),
+              RadioListTile<String>(
+                title: const Text('Name (A-Z)'),
+                value: 'name',
+                groupValue: _sortBy,
+                onChanged: (value) {
+                  Navigator.pop(context);
+                  setState(() {
+                    _sortBy = value!;
+                    _applyFilters();
+                  });
+                },
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        );
+      }
     );
   }
 }

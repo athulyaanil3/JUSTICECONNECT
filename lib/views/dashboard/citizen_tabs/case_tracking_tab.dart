@@ -9,6 +9,10 @@ import '../../../models/legal_case.dart';
 import '../../../models/case_update.dart';
 import '../../chat/chat_screen.dart';
 import '../../widgets/causelist_card.dart';
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
+import '../../../services/evidence_encryption_service.dart';
+import 'package:uuid/uuid.dart';
 
 class CaseTrackingTab extends StatefulWidget {
   const CaseTrackingTab({Key? key}) : super(key: key);
@@ -124,28 +128,8 @@ class _CaseTrackingTabState extends State<CaseTrackingTab> {
   }
 
   Widget _buildCourtCaseCard(BuildContext context, LegalCase c) {
-    // If the case is officially registered (has a case number), use the Causelist view
-    if (c.caseNumber.isNotEmpty) {
-      final isClosed = c.status.toLowerCase() == 'closed' || c.status.toLowerCase() == 'completed' || c.status.toLowerCase() == 'resolved';
-      return CauselistCard(
-        legalCase: c,
-        onTap: () => _showCaseUpdates(context, c),
-        bottomAction: isClosed
-            ? ElevatedButton.icon(
-                onPressed: () => _showRatingDialog(context, c),
-                icon: const Icon(Icons.star),
-                label: const Text('Rate Lawyer & Experience'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.amber[600],
-                  foregroundColor: Colors.white,
-                  shape: const RoundedRectangleBorder(borderRadius: BorderRadius.only(bottomLeft: Radius.circular(16), bottomRight: Radius.circular(16))),
-                ),
-              )
-            : null,
-      );
-    }
+    final isClosed = c.status.toLowerCase() == 'closed' || c.status.toLowerCase() == 'completed' || c.status.toLowerCase() == 'resolved';
     
-    // Fallback for cases that are not yet officially registered
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       elevation: 2,
@@ -160,7 +144,7 @@ class _CaseTrackingTabState extends State<CaseTrackingTab> {
               children: [
                 Expanded(
                   child: Text(
-                    c.title,
+                    c.title.isNotEmpty ? c.title : (c.caseNumber.isNotEmpty ? c.caseNumber : 'Legal Matter'),
                     style: GoogleFonts.outfit(
                       fontWeight: FontWeight.bold,
                       fontSize: 18,
@@ -170,13 +154,13 @@ class _CaseTrackingTabState extends State<CaseTrackingTab> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: Colors.blue[50],
+                    color: isClosed ? Colors.green[50] : Colors.blue[50],
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
                     c.status,
                     style: GoogleFonts.inter(
-                      color: Colors.blue[700],
+                      color: isClosed ? Colors.green[700] : Colors.blue[700],
                       fontWeight: FontWeight.w600,
                       fontSize: 12,
                     ),
@@ -184,15 +168,38 @@ class _CaseTrackingTabState extends State<CaseTrackingTab> {
                 ),
               ],
             ),
+            const SizedBox(height: 12),
+            _buildInfoRow(Icons.gavel, 'Case No: ${c.caseNumber.isNotEmpty ? c.caseNumber : 'Processing'}'),
             const SizedBox(height: 8),
-            _buildInfoRow(Icons.gavel, 'Case No: ${c.caseNumber.isNotEmpty ? c.caseNumber : 'Unassigned'}'),
+            _buildInfoRow(Icons.calendar_month, 'Next Hearing: ${c.nextHearingDate != null ? c.nextHearingDate!.toLocal().toString().split(' ')[0] : 'To be announced'}'),
             const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: () => _showCaseUpdates(context, c),
-              icon: const Icon(Icons.history),
-              label: const Text('View Timeline'),
-              style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor, foregroundColor: Colors.white),
-            )
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _showCaseUpdates(context, c),
+                    icon: const Icon(Icons.history),
+                    label: const Text('View Timeline'),
+                    style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor, foregroundColor: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+            if (isClosed) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => _showRatingDialog(context, c),
+                      icon: const Icon(Icons.star),
+                      label: const Text('Rate Lawyer'),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.amber[600], foregroundColor: Colors.white),
+                    ),
+                  ),
+                ],
+              ),
+            ]
           ],
         ),
       ),
@@ -288,54 +295,72 @@ class _CaseTrackingTabState extends State<CaseTrackingTab> {
                       final user = Supabase.instance.client.auth.currentUser;
                       if (user == null) return;
                       
+                      String? actualLawyerId = c.lawyerId.isNotEmpty ? c.lawyerId : null;
+                      
+                      String? officeId;
                       // Check if lawyer belongs to an office
-                      final lawyerData = await Supabase.instance.client.from('profiles').select('office_id').eq('id', c.lawyerId).maybeSingle();
-                      String? officeId = lawyerData?['office_id'];
+                      if (actualLawyerId != null) {
+                        final lawyerData = await Supabase.instance.client.from('profiles').select('office_id').eq('id', actualLawyerId).maybeSingle();
+                        officeId = lawyerData?['office_id'];
+                      }
 
                       // Insert review
                       await Supabase.instance.client.from('reviews').insert({
                         'case_id': c.id,
                         'citizen_id': user.id,
-                        'lawyer_id': c.lawyerId,
-                        'office_id': officeId,
+                        if (actualLawyerId != null) 'lawyer_id': actualLawyerId,
+                        if (officeId != null) 'office_id': officeId,
                         'rating': rating,
                         'review_text': textController.text.trim(),
                       });
 
-                      // Update Lawyer Profile Rating (Approximation)
-                      // A production app would use an SQL function/trigger to safely recalculate this.
-                      // For now, we increment rating_count and adjust rating simply.
-                      final currentLawyer = await Supabase.instance.client.from('profiles').select('rating, rating_count').eq('id', c.lawyerId).maybeSingle();
-                      if (currentLawyer != null) {
-                        int count = (currentLawyer['rating_count'] ?? 0) + 1;
-                        double oldRating = (currentLawyer['rating'] ?? 0).toDouble();
-                        double newRating = ((oldRating * (count - 1)) + rating) / count;
+                      // Update Lawyer Profile Rating
+                      if (actualLawyerId != null) {
+                        final reviewsRes = await Supabase.instance.client
+                            .from('reviews')
+                            .select('rating')
+                            .eq('lawyer_id', actualLawyerId);
                         
+                        double totalRating = 0.0;
+                        for (var row in reviewsRes) {
+                          totalRating += (row['rating'] as num).toDouble();
+                        }
+                        
+                        double newRating = reviewsRes.isNotEmpty ? totalRating / reviewsRes.length : 0.0;
+                        int newCount = reviewsRes.length;
+
                         await Supabase.instance.client.from('profiles').update({
                           'rating': newRating,
-                          'rating_count': count
-                        }).eq('id', c.lawyerId);
+                          'rating_count': newCount
+                        }).eq('id', actualLawyerId);
                       }
 
                       // Update Office Rating if applicable
                       if (officeId != null) {
-                        final currentOffice = await Supabase.instance.client.from('lawyer_offices').select('rating, rating_count').eq('id', officeId).maybeSingle();
-                        if (currentOffice != null) {
-                          int count = (currentOffice['rating_count'] ?? 0) + 1;
-                          double oldRating = (currentOffice['rating'] ?? 0).toDouble();
-                          double newRating = ((oldRating * (count - 1)) + rating) / count;
-                          
-                          await Supabase.instance.client.from('lawyer_offices').update({
-                            'rating': newRating,
-                            'rating_count': count
-                          }).eq('id', officeId);
+                        final officeReviewsRes = await Supabase.instance.client
+                            .from('reviews')
+                            .select('rating')
+                            .eq('office_id', officeId);
+                        
+                        double totalOfficeRating = 0.0;
+                        for (var row in officeReviewsRes) {
+                          totalOfficeRating += (row['rating'] as num).toDouble();
                         }
+                        
+                        double newOfficeRating = officeReviewsRes.isNotEmpty ? totalOfficeRating / officeReviewsRes.length : 0.0;
+                        int newOfficeCount = officeReviewsRes.length;
+
+                        await Supabase.instance.client.from('lawyer_offices').update({
+                          'rating': newOfficeRating,
+                          'rating_count': newOfficeCount
+                        }).eq('id', officeId);
                       }
 
                       Navigator.pop(ctx);
                       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Review submitted successfully!')));
                     } catch (e) {
                       debugPrint('Error submitting review: $e');
+                      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to submit review: $e'), backgroundColor: Colors.red));
                     }
                   },
                   child: const Text('Submit'),

@@ -133,35 +133,39 @@ class HomeTab extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [color.withOpacity(0.8), color],
+          ),
+          borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+              color: color.withOpacity(0.3),
+              blurRadius: 16,
+              offset: const Offset(0, 8),
             ),
           ],
         ),
         child: Column(
           children: [
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: Colors.white.withOpacity(0.2),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: color, size: 28),
+              child: Icon(icon, color: Colors.white, size: 32),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             Text(
               title,
               style: GoogleFonts.outfit(
                 fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: const Color(0xFF0D256C),
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
               ),
               textAlign: TextAlign.center,
             ),
@@ -172,24 +176,30 @@ class HomeTab extends StatelessWidget {
   }
 
   Widget _buildCaseCard(BuildContext context, {required String caseName, required String status, required String date}) {
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Colors.grey.shade200),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
+          ),
+        ],
+        border: Border.all(color: Colors.grey[100]!, width: 1.5),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         child: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.1),
-                shape: BoxShape.circle,
+                color: const Color(0xFF0D256C).withOpacity(0.08),
+                borderRadius: BorderRadius.circular(16),
               ),
-              child: const Icon(Icons.folder_open, color: Colors.blue),
+              child: const Icon(Icons.folder_open, color: Color(0xFF0D256C), size: 28),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -198,35 +208,35 @@ class HomeTab extends StatelessWidget {
                 children: [
                   Text(
                     caseName,
-                    style: GoogleFonts.inter(
+                    style: GoogleFonts.outfit(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
                       color: const Color(0xFF0D256C),
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      status,
-                      style: GoogleFonts.inter(
-                        color: Colors.blue[700],
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Row(
                     children: [
-                      Icon(Icons.calendar_today, size: 14, color: Colors.grey[600]),
-                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          status,
+                          style: GoogleFonts.inter(
+                            color: Colors.blue[700],
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Icon(Icons.calendar_today, size: 14, color: Colors.grey[500]),
+                      const SizedBox(width: 4),
                       Text(
-                        date,
+                        date.replaceAll('Requested on: ', ''),
                         style: GoogleFonts.inter(
                           color: Colors.grey[600],
                           fontSize: 13,
@@ -249,12 +259,16 @@ class HomeTab extends StatelessWidget {
     final hasUnread = notifProvider.unreadCount > 0;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.only(top: 60, left: 24, right: 24, bottom: 32),
       decoration: const BoxDecoration(
-        color: Color(0xFF0D256C),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF0D256C), Color(0xFF1A3B99)],
+        ),
         borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(24),
-          bottomRight: Radius.circular(24),
+          bottomLeft: Radius.circular(32),
+          bottomRight: Radius.circular(32),
         ),
       ),
       child: Column(
@@ -267,9 +281,10 @@ class HomeTab extends StatelessWidget {
                 child: Text(
                   'Welcome back,\n$username!',
                   style: GoogleFonts.outfit(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
                     color: Colors.white,
+                    height: 1.2,
                   ),
                 ),
               ),
@@ -278,7 +293,7 @@ class HomeTab extends StatelessWidget {
                   Stack(
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.notifications_outlined, color: Colors.amber, size: 28),
+                        icon: const Icon(Icons.notifications_outlined, color: Colors.white, size: 28),
                         onPressed: () {
                           Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationsScreen()));
                         },
@@ -290,7 +305,7 @@ class HomeTab extends StatelessWidget {
                           child: Container(
                             padding: const EdgeInsets.all(4),
                             decoration: const BoxDecoration(
-                              color: Colors.red,
+                              color: Colors.redAccent,
                               shape: BoxShape.circle,
                             ),
                             child: Text(
@@ -301,26 +316,32 @@ class HomeTab extends StatelessWidget {
                         ),
                     ],
                   ),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: 8),
                   GestureDetector(
                     onTap: () {
                       Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileScreen()));
                     },
-                    child: CircleAvatar(
-                      backgroundColor: Colors.white.withOpacity(0.1),
-                      child: const Icon(Icons.person, color: Colors.amber),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white.withOpacity(0.5), width: 2),
+                      ),
+                      child: CircleAvatar(
+                        backgroundColor: Colors.white.withOpacity(0.2),
+                        child: const Icon(Icons.person, color: Colors.white),
+                      ),
                     ),
                   ),
                 ],
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Text(
             'Here is your personalized legal overview.',
             style: GoogleFonts.inter(
-              fontSize: 14,
-              color: Colors.white70,
+              fontSize: 15,
+              color: Colors.white.withOpacity(0.8),
             ),
           ),
         ],
