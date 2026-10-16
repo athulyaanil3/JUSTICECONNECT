@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:justice_connect/views/auth/unified_auth_screen.dart';
+import 'unified_auth_screen.dart';
 import '../dashboard/lawyer_dashboard.dart';
 import '../dashboard/advocate_clerk_dashboard.dart';
 import 'lawyer_verification_screen.dart' as justice_connect_lawyer;
@@ -11,10 +11,10 @@ class PendingApprovalScreen extends StatefulWidget {
   final bool isRejected;
   final String? role;
   
-  const PendingApprovalScreen({Key? key, this.isRejected = false, this.role}) : super(key: key);
+  const PendingApprovalScreen({super.key, this.isRejected = false, this.role});
 
   @override
-  _PendingApprovalScreenState createState() => _PendingApprovalScreenState();
+  State<PendingApprovalScreen> createState() => _PendingApprovalScreenState();
 }
 
 class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
@@ -120,11 +120,11 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
                   Container(
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
-                      color: _isRejected ? Colors.red.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
+                      color: _isRejected ? Colors.red.withValues(alpha: 0.1) : Colors.orange.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: _isRejected ? Colors.red.withOpacity(0.2) : Colors.orange.withOpacity(0.2),
+                          color: _isRejected ? Colors.red.withValues(alpha: 0.2) : Colors.orange.withValues(alpha: 0.2),
                           blurRadius: 20,
                           offset: const Offset(0, 10),
                         ),
@@ -147,12 +147,12 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
                       borderRadius: BorderRadius.circular(24),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.04),
+                          color: Colors.black.withValues(alpha: 0.04),
                           blurRadius: 20,
                           offset: const Offset(0, 10),
                         ),
                       ],
-                      border: Border.all(color: Colors.grey.withOpacity(0.1)),
+                      border: Border.all(color: Colors.grey.withValues(alpha: 0.1)),
                     ),
                     child: Column(
                       children: [
@@ -214,6 +214,37 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
                                 backgroundColor: Theme.of(context).primaryColor,
                                 foregroundColor: Colors.white,
                                 elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ] else ...[
+                          // Check Status Button
+                          SizedBox(
+                            width: double.infinity,
+                            height: 56,
+                            child: OutlinedButton.icon(
+                              onPressed: _isLoading ? null : () => _checkStatus(context),
+                              icon: _isLoading
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Icon(Icons.refresh, color: Color(0xFF0D256C)),
+                              label: Text(
+                                'Check Approval Status',
+                                style: GoogleFonts.inter(
+                                  color: const Color(0xFF0D256C),
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(color: Color(0xFF0D256C), width: 1.5),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
                                 ),

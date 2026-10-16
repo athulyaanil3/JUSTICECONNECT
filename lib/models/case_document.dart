@@ -45,7 +45,7 @@ class CaseDocument {
       documentUrl: json['document_url'] ?? '',
       verificationStatus: json['verification_status'] ?? 'Pending',
       remarks: json['remarks'] ?? '',
-      createdAt: DateTime.parse(json['created_at']),
+      createdAt: DateTime.parse(json['created_at']).toLocal(),
       storagePath: json['storage_path'],
       fileSize: json['file_size'],
       mimeType: json['mime_type'],
