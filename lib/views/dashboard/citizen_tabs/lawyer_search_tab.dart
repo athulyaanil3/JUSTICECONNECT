@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../controllers/request_provider.dart';
 import '../../../models/consultation_request.dart';
+import '../../../services/lawyer_rating_service.dart';
 import 'lawyer_public_profile_screen.dart';
 import 'office_search_view.dart';
 
@@ -24,6 +25,8 @@ class _LawyerSearchTabState extends State<LawyerSearchTab> {
   bool _isLoading = true;
   String _searchQuery = '';
   String _sortBy = 'rating';
+  bool _filterTopRatedOnly = false;
+  bool _filterSeniorOnly = false;
 
   @override
   void initState() {
@@ -41,11 +44,37 @@ class _LawyerSearchTabState extends State<LawyerSearchTab> {
       }).toList();
     }
 
+    if (_filterTopRatedOnly) {
+      filtered = filtered.where((lawyer) {
+        final rating = double.tryParse(lawyer['rating']?.toString() ?? '0') ?? 0.0;
+        return rating >= 4.0;
+      }).toList();
+    }
+
+    if (_filterSeniorOnly) {
+      filtered = filtered.where((lawyer) {
+        final exp = int.tryParse(lawyer['experience']?.toString() ?? '0') ?? 0;
+        return exp >= 5;
+      }).toList();
+    }
+
     if (_sortBy == 'rating') {
       filtered.sort((a, b) {
         final ratingA = (a['rating'] ?? 0).toDouble();
         final ratingB = (b['rating'] ?? 0).toDouble();
-        return ratingB.compareTo(ratingA); // Descending
+        if (ratingB != ratingA) {
+          return ratingB.compareTo(ratingA); // Highest rating first
+        }
+        // Secondary sort by experience for newly registered lawyers
+        final expA = int.tryParse(a['experience']?.toString() ?? '0') ?? 0;
+        final expB = int.tryParse(b['experience']?.toString() ?? '0') ?? 0;
+        return expB.compareTo(expA);
+      });
+    } else if (_sortBy == 'experience') {
+      filtered.sort((a, b) {
+        final expA = int.tryParse(a['experience']?.toString() ?? '0') ?? 0;
+        final expB = int.tryParse(b['experience']?.toString() ?? '0') ?? 0;
+        return expB.compareTo(expA); // Highest experience first
       });
     } else if (_sortBy == 'name') {
       filtered.sort((a, b) {
@@ -91,21 +120,43 @@ class _LawyerSearchTabState extends State<LawyerSearchTab> {
         appBar: AppBar(
           title: Text(
             'Find a Lawyer',
-            style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+            style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 20, color: const Color(0xFF0D256C)),
           ),
           backgroundColor: Colors.white,
-          foregroundColor: Theme.of(context).primaryColor,
-          elevation: 0,
+          foregroundColor: const Color(0xFF0D256C),
+          elevation: 0.5,
           actions: [
-            IconButton(
-              icon: const Icon(Icons.filter_list),
-              onPressed: _showFilterDialog,
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.filter_list, color: Color(0xFF0D256C)),
+                  tooltip: 'Filter',
+                  onPressed: _showFilterDialog,
+                ),
+                if (_filterTopRatedOnly || _filterSeniorOnly || _sortBy != 'rating')
+                  Positioned(
+                    top: 10,
+                    right: 10,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Colors.amber,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ],
           bottom: TabBar(
-            labelColor: Theme.of(context).primaryColor,
-            unselectedLabelColor: Colors.grey,
-            indicatorColor: Theme.of(context).primaryColor,
+            labelColor: const Color(0xFF0D256C),
+            unselectedLabelColor: Colors.grey.shade600,
+            indicatorColor: const Color(0xFF0D256C),
+            indicatorWeight: 3,
+            labelStyle: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 14),
+            unselectedLabelStyle: GoogleFonts.inter(fontWeight: FontWeight.normal, fontSize: 14),
             tabs: const [
               Tab(text: 'Lawyers'),
               Tab(text: 'Offices'),
@@ -174,7 +225,13 @@ class _LawyerSearchTabState extends State<LawyerSearchTab> {
 
   Widget _buildLawyerCard(BuildContext context, Map<String, dynamic> lawyer) {
     final name = lawyer['username'] ?? 'Unknown Lawyer';
-    final spec = 'General Practice'; // Hardcoded for now since spec isn't in profiles
+    final rawSpec = lawyer['specialization']?.toString();
+    final spec = (rawSpec != null && rawSpec.isNotEmpty) ? rawSpec : 'Advocate / Legal Practitioner';
+    
+    final hasAppReviews = LawyerRatingService.hasAppReviews(lawyer);
+    final rating = double.tryParse(lawyer['rating']?.toString() ?? '0') ?? 0.0;
+    final ratingCount = int.tryParse(lawyer['rating_count']?.toString() ?? '0') ?? 0;
+    final expText = LawyerRatingService.getExperienceString(lawyer);
     
     final requestProvider = Provider.of<RequestProvider>(context);
     final alreadyBooked = requestProvider.requests.any((req) =>
@@ -252,29 +309,56 @@ class _LawyerSearchTabState extends State<LawyerSearchTab> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.amber[50],
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.amber[200]!),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.star, size: 14, color: Colors.amber[600]),
-                            const SizedBox(width: 4),
-                            Text(
-                              "${lawyer['rating'] ?? 'New'} (${lawyer['rating_count'] ?? 0})",
-                              style: GoogleFonts.inter(
-                                color: Colors.amber[900],
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
+                      // If lawyer has received client ratings through the app, show Star Rating
+                      // Otherwise, show their verified professional experience from profile
+                      if (hasAppReviews)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.amber[50],
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: Colors.amber[200]!),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.star, size: 14, color: Colors.amber[600]),
+                              const SizedBox(width: 4),
+                              Text(
+                                "${rating.toStringAsFixed(1)} ($ratingCount ${ratingCount == 1 ? 'review' : 'reviews'})",
+                                style: GoogleFonts.inter(
+                                  color: Colors.amber[900],
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
+                        )
+                      else
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1A365D).withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: const Color(0xFF1A365D).withOpacity(0.2)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.workspace_premium_outlined, size: 14, color: Color(0xFF1A365D)),
+                              const SizedBox(width: 4),
+                              Text(
+                                expText,
+                                style: GoogleFonts.inter(
+                                  color: const Color(0xFF1A365D),
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -293,6 +377,11 @@ class _LawyerSearchTabState extends State<LawyerSearchTab> {
                         ),
                       );
                       
+                      // Refresh lawyers to reflect any rating submitted on public profile
+                      if (mounted) {
+                        _fetchLawyers();
+                      }
+
                       if (shouldBook == true && mounted) {
                         _checkAndShowBookingDialog(context, name);
                       }
@@ -330,8 +419,6 @@ class _LawyerSearchTabState extends State<LawyerSearchTab> {
   }
 
   void _checkAndShowBookingDialog(BuildContext context, String lawyerName) {
-    final user = Supabase.instance.client.auth.currentUser;
-    final citizenUsername = user?.userMetadata?['username'] ?? 'Citizen';
     final requestProvider = Provider.of<RequestProvider>(context, listen: false);
 
     final alreadyBooked = requestProvider.requests.any((req) =>
@@ -437,46 +524,181 @@ class _LawyerSearchTabState extends State<LawyerSearchTab> {
   void _showFilterDialog() {
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Sort & Filter', style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 20),
-              Text('Sort By', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-              RadioListTile<String>(
-                title: const Text('Rating (Highest First)'),
-                value: 'rating',
-                groupValue: _sortBy,
-                onChanged: (value) {
-                  Navigator.pop(context);
-                  setState(() {
-                    _sortBy = value!;
-                    _applyFilters();
-                  });
-                },
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.tune_rounded, color: Color(0xFF0D256C), size: 22),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Sort & Filter',
+                        style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold, color: const Color(0xFF0D256C)),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () {
+                          setModalState(() {
+                            _sortBy = 'rating';
+                            _filterTopRatedOnly = false;
+                            _filterSeniorOnly = false;
+                          });
+                          setState(() => _applyFilters());
+                        },
+                        child: Text(
+                          'Reset',
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: Colors.grey[600]),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'SORT BY',
+                    style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.grey[600], letterSpacing: 0.5),
+                  ),
+                  const SizedBox(height: 6),
+                  CheckboxListTile(
+                    title: Text(
+                      'Rating (Highest First)',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
+                    subtitle: Text(
+                      'Sort by client reviews & star ratings',
+                      style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[600]),
+                    ),
+                    secondary: const Icon(Icons.star_rounded, color: Colors.amber, size: 24),
+                    value: _sortBy == 'rating',
+                    activeColor: const Color(0xFF0D256C),
+                    checkboxShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                    contentPadding: EdgeInsets.zero,
+                    onChanged: (bool? checked) {
+                      setModalState(() {
+                        _sortBy = (checked == true) ? 'rating' : '';
+                      });
+                      setState(() => _applyFilters());
+                    },
+                  ),
+                  CheckboxListTile(
+                    title: Text(
+                      'Experience (Most Experienced)',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
+                    subtitle: Text(
+                      'Sort by years of practice at the Bar',
+                      style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[600]),
+                    ),
+                    secondary: const Icon(Icons.timeline_rounded, color: Color(0xFF0D256C), size: 24),
+                    value: _sortBy == 'experience',
+                    activeColor: const Color(0xFF0D256C),
+                    checkboxShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                    contentPadding: EdgeInsets.zero,
+                    onChanged: (bool? checked) {
+                      setModalState(() {
+                        _sortBy = (checked == true) ? 'experience' : '';
+                      });
+                      setState(() => _applyFilters());
+                    },
+                  ),
+                  CheckboxListTile(
+                    title: Text(
+                      'Name (A-Z)',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
+                    subtitle: Text(
+                      'Alphabetical order by advocate name',
+                      style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[600]),
+                    ),
+                    secondary: const Icon(Icons.sort_by_alpha_rounded, color: Color(0xFF0D256C), size: 24),
+                    value: _sortBy == 'name',
+                    activeColor: const Color(0xFF0D256C),
+                    checkboxShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                    contentPadding: EdgeInsets.zero,
+                    onChanged: (bool? checked) {
+                      setModalState(() {
+                        _sortBy = (checked == true) ? 'name' : '';
+                      });
+                      setState(() => _applyFilters());
+                    },
+                  ),
+                  const Divider(height: 24),
+                  Text(
+                    'FILTER OPTIONS',
+                    style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.grey[600], letterSpacing: 0.5),
+                  ),
+                  const SizedBox(height: 6),
+                  CheckboxListTile(
+                    title: Text(
+                      'Top Rated Advocates Only (4.0+ Stars)',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
+                    subtitle: Text(
+                      'Filter advocates with 4.0 or higher client ratings',
+                      style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[600]),
+                    ),
+                    secondary: const Icon(Icons.verified_rounded, color: Colors.blue, size: 24),
+                    value: _filterTopRatedOnly,
+                    activeColor: const Color(0xFF0D256C),
+                    checkboxShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                    contentPadding: EdgeInsets.zero,
+                    onChanged: (bool? checked) {
+                      setModalState(() {
+                        _filterTopRatedOnly = checked ?? false;
+                      });
+                      setState(() => _applyFilters());
+                    },
+                  ),
+                  CheckboxListTile(
+                    title: Text(
+                      'Senior Advocates (5+ Years Experience)',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
+                    subtitle: Text(
+                      'Filter advocates with 5 or more years of practice',
+                      style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[600]),
+                    ),
+                    secondary: const Icon(Icons.workspace_premium_rounded, color: Color(0xFFD97706), size: 24),
+                    value: _filterSeniorOnly,
+                    activeColor: const Color(0xFF0D256C),
+                    checkboxShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                    contentPadding: EdgeInsets.zero,
+                    onChanged: (bool? checked) {
+                      setModalState(() {
+                        _filterSeniorOnly = checked ?? false;
+                      });
+                      setState(() => _applyFilters());
+                    },
+                  ),
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0D256C),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                      child: Text('Done', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 15)),
+                    ),
+                  ),
+                ],
               ),
-              RadioListTile<String>(
-                title: const Text('Name (A-Z)'),
-                value: 'name',
-                groupValue: _sortBy,
-                onChanged: (value) {
-                  Navigator.pop(context);
-                  setState(() {
-                    _sortBy = value!;
-                    _applyFilters();
-                  });
-                },
-              ),
-              const SizedBox(height: 20),
-            ],
-          ),
+            );
+          },
         );
-      }
+      },
     );
   }
 }

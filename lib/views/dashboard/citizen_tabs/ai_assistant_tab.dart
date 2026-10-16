@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AIAssistantTab extends StatefulWidget {
   const AIAssistantTab({Key? key}) : super(key: key);
@@ -22,7 +23,7 @@ class _AIAssistantTabState extends State<AIAssistantTab> {
     }
   ];
 
-  final String _groqApiKey = '';
+  String _groqApiKey = const String.fromEnvironment('GROQ_API_KEY', defaultValue: '');
   
   final List<String> _suggestedPrompts = [
     'Explain "Habeas Corpus"',
@@ -30,6 +31,110 @@ class _AIAssistantTabState extends State<AIAssistantTab> {
     'How to file a consumer complaint?',
     'What are my workplace rights?',
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadApiKey();
+  }
+
+  Future<void> _loadApiKey() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedKey = prefs.getString('groq_api_key');
+    if (mounted) {
+      setState(() {
+        _groqApiKey = (savedKey != null && savedKey.isNotEmpty)
+            ? savedKey
+            : const String.fromEnvironment('GROQ_API_KEY', defaultValue: '');
+      });
+    }
+  }
+
+  Future<void> _saveApiKey(String newKey) async {
+    final trimmed = newKey.trim();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('groq_api_key', trimmed);
+    if (mounted) {
+      setState(() {
+        _groqApiKey = trimmed;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Groq API Key saved successfully!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+  }
+
+  void _showApiKeyDialog() {
+    final keyController = TextEditingController(text: _groqApiKey);
+    bool obscure = true;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: const [
+              Icon(Icons.vpn_key, color: Color(0xFF0D256C)),
+              SizedBox(width: 8),
+              Text('Groq API Key'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Enter your Groq Cloud API key to power the AI Legal Assistant.',
+                style: GoogleFonts.inter(fontSize: 13, color: Colors.grey[700]),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: keyController,
+                obscureText: obscure,
+                decoration: InputDecoration(
+                  labelText: 'API Key (starts with gsk_...)',
+                  hintText: 'gsk_...',
+                  border: const OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    icon: Icon(obscure ? Icons.visibility_off : Icons.visibility),
+                    onPressed: () {
+                      setDialogState(() => obscure = !obscure);
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Tip: Get a free key at console.groq.com/keys',
+                style: GoogleFonts.inter(fontSize: 12, color: Colors.blue[800], fontWeight: FontWeight.w500),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0D256C),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                Navigator.pop(ctx);
+                _saveApiKey(keyController.text);
+              },
+              child: const Text('Save Key'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Future<void> _sendMessage(String text) async {
     if (text.trim().isEmpty) return;
@@ -42,33 +147,68 @@ class _AIAssistantTabState extends State<AIAssistantTab> {
     _controller.clear();
     _scrollToBottom();
 
+    if (_groqApiKey.trim().isEmpty) {
+      setState(() {
+        _messages.add({
+          'isMe': false,
+          'text': '⚠️ Groq API Key is not configured.\n\nPlease tap the Key icon in the top right to enter your Groq API key (starts with "gsk_..."). You can get a free key from console.groq.com/keys.',
+          'requiresKey': true,
+        });
+        _isLoading = false;
+      });
+      _scrollToBottom();
+      return;
+    }
+
     try {
-      final response = await http.post(
+      final systemPrompt =
+          'You are a friendly Legal Assistant for JusticeConnect in India. Your job is to give EXTREMELY SIMPLE, easy-to-understand answers to regular citizens. '
+          'When a user asks a question, always structure your answer strictly as follows:\n'
+          '1. Likely Law: State the relevant legal section (e.g., BNS, IPC, CrPC, Consumer Protection Act) in one simple sentence.\n'
+          '2. Required Documents: Provide a simple bulleted list of 3-4 documents they need.\n'
+          '3. Next Step: One simple sentence on what to do next.\n'
+          'DO NOT use complex legal jargon. DO NOT write long paragraphs. Keep it very short, clear, and to the point.';
+
+      final messagesPayload = [
+        {'role': 'system', 'content': systemPrompt},
+        ..._messages
+            .where((m) => m['requiresKey'] != true)
+            .skip(1)
+            .map((m) => {
+                  'role': m['isMe'] ? 'user' : 'assistant',
+                  'content': m['text'],
+                }),
+      ];
+
+      // Try primary model: openai/gpt-oss-20b, fallback to openai/gpt-oss-120b / qwen/qwen3.8-27b
+      http.Response response = await http.post(
         Uri.parse('https://api.groq.com/openai/v1/chat/completions'),
         headers: {
-          'Authorization': 'Bearer $_groqApiKey',
+          'Authorization': 'Bearer ${_groqApiKey.trim()}',
           'Content-Type': 'application/json',
         },
         body: jsonEncode({
           'model': 'openai/gpt-oss-20b',
-          'messages': [
-            {
-              'role': 'system',
-              'content': 'You are a friendly Legal Assistant for JusticeConnect in India. Your job is to give EXTREMELY SIMPLE, easy-to-understand answers to regular citizens. '
-                         'When a user asks a question, always structure your answer strictly as follows:\n'
-                         '1. Likely Law: State the relevant legal section (e.g., IPC, CrPC) in one simple sentence.\n'
-                         '2. Required Documents: Provide a simple bulleted list of 3-4 documents they need.\n'
-                         '3. Next Step: One simple sentence on what to do next.\n'
-                         'DO NOT use complex legal jargon. DO NOT write long paragraphs. Keep it very short, clear, and to the point.'
-            },
-            ..._messages.skip(1).map((m) => {
-              'role': m['isMe'] ? 'user' : 'assistant',
-              'content': m['text']
-            }).toList(),
-          ],
+          'messages': messagesPayload,
           'temperature': 0.7,
         }),
       );
+
+      // Fallback if model not available or rate limited
+      if (response.statusCode != 200 && response.statusCode != 401) {
+        response = await http.post(
+          Uri.parse('https://api.groq.com/openai/v1/chat/completions'),
+          headers: {
+            'Authorization': 'Bearer ${_groqApiKey.trim()}',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'model': 'openai/gpt-oss-120b',
+            'messages': messagesPayload,
+            'temperature': 0.7,
+          }),
+        );
+      }
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -87,13 +227,21 @@ class _AIAssistantTabState extends State<AIAssistantTab> {
           }
         } catch (_) {}
 
+        if (response.statusCode == 401) {
+          errorMsg = 'Invalid Groq API Key. Please verify your key at console.groq.com/keys and tap the Key icon above to update it.';
+        }
+
         setState(() {
-          _messages.add({'isMe': false, 'text': 'API Error: $errorMsg'});
+          _messages.add({
+            'isMe': false,
+            'text': 'API Error: $errorMsg',
+            'requiresKey': response.statusCode == 401,
+          });
         });
       }
     } catch (e) {
       setState(() {
-        _messages.add({'isMe': false, 'text': 'Connection error. Please check your internet connection.'});
+        _messages.add({'isMe': false, 'text': 'Connection error: $e. Please check your internet connection.'});
       });
     } finally {
       setState(() {
@@ -118,18 +266,49 @@ class _AIAssistantTabState extends State<AIAssistantTab> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.background,
+      backgroundColor: const Color(0xFFF7F9FC),
       appBar: AppBar(
         title: Text(
           'AI Legal Assistant',
-          style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+          style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 20, color: const Color(0xFF0D256C)),
         ),
         backgroundColor: Colors.white,
-        foregroundColor: Theme.of(context).primaryColor,
-        elevation: 1,
+        foregroundColor: const Color(0xFF0D256C),
+        elevation: 0.5,
+        actions: [
+          IconButton(
+            icon: Icon(
+              Icons.vpn_key_outlined,
+              color: _groqApiKey.isEmpty ? Colors.orange : const Color(0xFF0D256C),
+            ),
+            tooltip: 'Configure Groq API Key',
+            onPressed: _showApiKeyDialog,
+          ),
+        ],
       ),
       body: Column(
         children: [
+          if (_groqApiKey.isEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: Colors.amber.shade100,
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, color: Colors.brown, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Groq API key not set. Tap to configure.',
+                      style: GoogleFonts.inter(fontSize: 12, color: Colors.brown.shade900, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _showApiKeyDialog,
+                    child: const Text('Configure', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ),
           Expanded(
             child: ListView.builder(
               controller: _scrollController,
@@ -153,6 +332,7 @@ class _AIAssistantTabState extends State<AIAssistantTab> {
                   context,
                   isMe: msg['isMe'],
                   message: msg['text'],
+                  requiresKey: msg['requiresKey'] == true,
                 );
               },
             ),
@@ -163,7 +343,7 @@ class _AIAssistantTabState extends State<AIAssistantTab> {
     );
   }
 
-  Widget _buildMessageBubble(BuildContext context, {required bool isMe, required String message}) {
+  Widget _buildMessageBubble(BuildContext context, {required bool isMe, required String message, bool requiresKey = false}) {
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -171,20 +351,39 @@ class _AIAssistantTabState extends State<AIAssistantTab> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.85),
         decoration: BoxDecoration(
-          color: isMe ? Theme.of(context).primaryColor : Colors.white,
+          color: isMe ? Theme.of(context).primaryColor : (requiresKey ? Colors.amber.shade50 : Colors.white),
           borderRadius: BorderRadius.circular(16).copyWith(
             bottomLeft: isMe ? const Radius.circular(16) : const Radius.circular(0),
             bottomRight: isMe ? const Radius.circular(0) : const Radius.circular(16),
           ),
-          border: isMe ? null : Border.all(color: Colors.grey[300]!),
+          border: isMe ? null : Border.all(color: requiresKey ? Colors.amber.shade400 : Colors.grey[300]!),
         ),
-        child: Text(
-          message,
-          style: GoogleFonts.inter(
-            color: isMe ? Colors.white : Colors.black87,
-            fontSize: 15,
-            height: 1.4,
-          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              message,
+              style: GoogleFonts.inter(
+                color: isMe ? Colors.white : Colors.black87,
+                fontSize: 15,
+                height: 1.4,
+              ),
+            ),
+            if (requiresKey) ...[
+              const SizedBox(height: 10),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.vpn_key, size: 16),
+                label: const Text('Enter Groq API Key'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0D256C),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+                onPressed: _showApiKeyDialog,
+              ),
+            ],
+          ],
         ),
       ),
     );

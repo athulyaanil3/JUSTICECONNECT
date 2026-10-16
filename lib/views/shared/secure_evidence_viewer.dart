@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -98,16 +97,16 @@ class _SecureEvidenceViewerState extends State<SecureEvidenceViewer> {
     );
 
     try {
-      // 🔐 Pattern Verification Before Viewing 🔐
+      // 🔐 Security Code Verification Before Viewing 🔐
       final isAuthenticated = await PatternVerificationService.authenticate(
         context: context,
-        reason: 'Please draw your secure pattern to authorize viewing this highly secure evidence.',
+        reason: 'Please enter your 4-digit security code to authorize viewing this highly secure evidence.',
         userKey: _supabase.auth.currentUser?.email,
       );
 
       if (!isAuthenticated) {
         if (mounted) Navigator.pop(context); // Close loading dialog
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Authentication failed. Evidence not decrypted.')));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Security code verification failed. Evidence not decrypted.')));
         return;
       }
 

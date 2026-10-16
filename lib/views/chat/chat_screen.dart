@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 // removed flutter_windowmanager import
 
 import '../../controllers/request_provider.dart';
@@ -15,6 +16,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/evidence_encryption_service.dart';
 import '../../services/pattern_verification_service.dart';
 import '../shared/secure_evidence_viewer.dart';
+import '../dashboard/chat/filing_chat_screen.dart';
+import '../../models/legal_case.dart';
 
 class ChatScreen extends StatefulWidget {
   final String requestId;
@@ -40,6 +43,9 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _secureScreen();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Provider.of<RequestProvider>(context, listen: false).fetchRequests();
+    });
   }
 
   Future<void> _secureScreen() async {
@@ -60,7 +66,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final message = {
       'text': _messageController.text.trim(),
       'sender': widget.isLawyer ? 'Lawyer' : 'Citizen',
-      'time': 'Just now',
+      'time': DateFormat('hh:mm a').format(DateTime.now()),
     };
 
     Provider.of<RequestProvider>(context, listen: false)
@@ -87,7 +93,7 @@ class _ChatScreenState extends State<ChatScreen> {
         allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'mp4'],
       );
 
-      if (result == null || result.isEmpty) return;
+      if (result.isEmpty) return;
       
       final files = result.map((f) => File(f.path!)).toList();
       
@@ -100,15 +106,15 @@ class _ChatScreenState extends State<ChatScreen> {
         return;
       }
 
-      // 🔐 Pattern Verification Before Sending 🔐
+      // 🔐 Security Code Verification Before Sending 🔐
       final isAuthenticated = await PatternVerificationService.authenticate(
         context: context,
-        reason: 'Please draw your pattern to authorize this secure evidence transfer.',
+        reason: 'Please enter your 4-digit security code to authorize this secure evidence transfer.',
         userKey: Supabase.instance.client.auth.currentUser?.email,
       );
 
       if (!isAuthenticated) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Authentication failed. File not sent.')));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Security code verification failed. File not sent.')));
         return;
       }
 
@@ -170,7 +176,7 @@ class _ChatScreenState extends State<ChatScreen> {
       final message = {
         'text': '[ENCRYPTED_FILE]',
         'sender': widget.isLawyer ? 'Lawyer' : 'Citizen',
-        'time': 'Just now',
+        'time': DateFormat('hh:mm a').format(DateTime.now()),
       };
       Provider.of<RequestProvider>(context, listen: false)
           .addMessageToRequest(widget.requestId, message);
@@ -274,6 +280,131 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  Future<void> _openClerkChat(BuildContext context) async {
+    final lawyerProvider = Provider.of<LawyerProvider>(context, listen: false);
+    
+    // 1. Fetch available clerks for this lawyer
+    final clerks = await lawyerProvider.fetchAvailableClerks();
+    if (!context.mounted) return;
+
+    if (clerks.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No advocate clerks currently assigned to your office. You can approve and assign clerks in Client Management.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // 2. Find if this client has an existing case with an assigned clerk
+    final matchingCases = lawyerProvider.myCases.where((c) {
+      return c.userId.toLowerCase() == widget.otherPersonName.toLowerCase() ||
+          c.title.toLowerCase().contains(widget.otherPersonName.toLowerCase());
+    }).toList();
+
+    LegalCase? assignedCase;
+    for (var c in matchingCases) {
+      if (c.advocateClerkId.isNotEmpty) {
+        assignedCase = c;
+        break;
+      }
+    }
+
+    if (assignedCase != null) {
+      final foundCase = assignedCase;
+      final assignedClerk = clerks.firstWhere(
+        (cl) => cl['id'] == foundCase.advocateClerkId,
+        orElse: () => {'username': 'Assigned Clerk', 'id': foundCase.advocateClerkId},
+      );
+      final clerkName = assignedClerk['username'] ?? 'Assigned Clerk';
+      
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => FilingChatScreen(
+            filingId: foundCase.id,
+            filingTitle: '${foundCase.title} (Clerk: $clerkName)',
+            currentUserRole: 'Lawyer',
+          ),
+        ),
+      );
+      return;
+    }
+
+    // 3. If no clerk assigned yet, show selection sheet so lawyer can choose which clerk to chat with
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.support_agent, color: Color(0xFF0D256C), size: 28),
+                const SizedBox(width: 12),
+                Text(
+                  'Chat with Advocate Clerk',
+                  style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Select an advocate clerk to coordinate on this matter:',
+              style: GoogleFonts.inter(color: Colors.grey[600], fontSize: 13),
+            ),
+            const Divider(height: 24),
+            ...clerks.map((clerk) {
+              final clerkId = clerk['id'] as String;
+              final clerkName = (clerk['username'] ?? 'Clerk').toString();
+
+              return ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                leading: CircleAvatar(
+                  backgroundColor: const Color(0xFF0D256C).withOpacity(0.1),
+                  child: const Icon(Icons.person, color: Color(0xFF0D256C)),
+                ),
+                title: Text(clerkName, style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                subtitle: const Text('Advocate Clerk', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                trailing: const Icon(Icons.chat_bubble_outline, color: Color(0xFF0D256C)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  final caseId = matchingCases.isNotEmpty 
+                      ? matchingCases.first.id 
+                      : 'consultation_${widget.requestId}';
+                  final caseTitle = matchingCases.isNotEmpty 
+                      ? matchingCases.first.title 
+                      : 'Client: ${widget.otherPersonName}';
+
+                  if (matchingCases.isNotEmpty && matchingCases.first.advocateClerkId.isEmpty) {
+                    lawyerProvider.assignAdvocateClerk(matchingCases.first.id, clerkId);
+                  }
+
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => FilingChatScreen(
+                        filingId: caseId,
+                        filingTitle: '$caseTitle (Clerk: $clerkName)',
+                        currentUserRole: 'Lawyer',
+                      ),
+                    ),
+                  );
+                },
+              );
+            }).toList(),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -286,19 +417,42 @@ class _ChatScreenState extends State<ChatScreen> {
               child: Icon(Icons.person, color: Theme.of(context).primaryColor),
             ),
             const SizedBox(width: 12),
-            Text(
-              widget.otherPersonName,
-              style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 18),
+            Expanded(
+              child: Text(
+                widget.otherPersonName,
+                style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 18),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
         ),
+        actions: [
+          if (widget.isLawyer)
+            IconButton(
+              icon: const Icon(Icons.support_agent_outlined),
+              tooltip: 'Chat with Assigned Clerk',
+              onPressed: () => _openClerkChat(context),
+            ),
+        ],
         backgroundColor: Colors.white,
         foregroundColor: Theme.of(context).primaryColor,
         elevation: 1,
       ),
       body: Consumer<RequestProvider>(
         builder: (context, requestProvider, child) {
-          final request = requestProvider.requests.firstWhere((r) => r.id == widget.requestId);
+          ConsultationRequest? foundRequest;
+          for (var r in requestProvider.requests) {
+            if (r.id == widget.requestId) {
+              foundRequest = r;
+              break;
+            }
+          }
+
+          if (foundRequest == null) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final request = foundRequest;
           
           return Column(
             children: [
@@ -323,12 +477,32 @@ class _ChatScreenState extends State<ChatScreen> {
                 Container(
                   width: double.infinity,
                   color: Colors.green[50],
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   child: Row(
                     children: [
-                      const Icon(Icons.check_circle, color: Colors.green),
+                      const Icon(Icons.check_circle, color: Colors.green, size: 20),
                       const SizedBox(width: 8),
-                      Expanded(child: Text(widget.isLawyer ? 'Case Started. Manage case details in Case Management tab.' : 'Case officially taken by lawyer!', style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: Colors.green[800]))),
+                      Expanded(
+                        child: Text(
+                          widget.isLawyer 
+                            ? 'Case Started' 
+                            : 'Case officially taken by lawyer!', 
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: Colors.green[800], fontSize: 13),
+                        ),
+                      ),
+                      if (widget.isLawyer) ...[
+                        const SizedBox(width: 8),
+                        TextButton.icon(
+                          style: TextButton.styleFrom(
+                            backgroundColor: const Color(0xFF0D256C),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          ),
+                          onPressed: () => _openClerkChat(context),
+                          icon: const Icon(Icons.chat_outlined, size: 14),
+                          label: const Text('Clerk Chat', style: TextStyle(fontSize: 12)),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -345,7 +519,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         context,
                         isMe: isMe,
                         message: 'Initial Issue: ${request.issueDescription}',
-                        time: 'At requested time',
+                        time: DateFormat('hh:mm a').format(request.requestedAt.toLocal()),
                       );
                     }
                     

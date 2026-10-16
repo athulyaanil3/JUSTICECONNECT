@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../controllers/request_provider.dart';
+import '../../../services/lawyer_rating_service.dart';
 
 class LawyerPublicProfileScreen extends StatefulWidget {
   final Map<String, dynamic> lawyer;
@@ -20,7 +21,6 @@ class LawyerPublicProfileScreen extends StatefulWidget {
 class _LawyerPublicProfileScreenState extends State<LawyerPublicProfileScreen> {
   double _displayRating = 0.0;
   int _reviewsCount = 0;
-  bool _isLoadingRating = true;
 
   @override
   void initState() {
@@ -31,10 +31,7 @@ class _LawyerPublicProfileScreenState extends State<LawyerPublicProfileScreen> {
   Future<void> _fetchLawyerRating() async {
     try {
       final lawyerId = widget.lawyer['id'];
-      if (lawyerId == null) {
-        setState(() => _isLoadingRating = false);
-        return;
-      }
+      if (lawyerId == null) return;
 
       final response = await Supabase.instance.client
           .from('reviews')
@@ -43,11 +40,12 @@ class _LawyerPublicProfileScreenState extends State<LawyerPublicProfileScreen> {
 
       final List<dynamic> ratings = response;
       if (ratings.isEmpty) {
-        setState(() {
-          _displayRating = 0.0;
-          _reviewsCount = 0;
-          _isLoadingRating = false;
-        });
+        if (mounted) {
+          setState(() {
+            _displayRating = 0.0;
+            _reviewsCount = 0;
+          });
+        }
         return;
       }
 
@@ -56,14 +54,14 @@ class _LawyerPublicProfileScreenState extends State<LawyerPublicProfileScreen> {
         total += (row['rating'] as num).toDouble();
       }
 
-      setState(() {
-        _displayRating = total / ratings.length;
-        _reviewsCount = ratings.length;
-        _isLoadingRating = false;
-      });
+      if (mounted) {
+        setState(() {
+          _displayRating = double.parse((total / ratings.length).toStringAsFixed(1));
+          _reviewsCount = ratings.length;
+        });
+      }
     } catch (e) {
-      debugPrint('Error fetching lawyer ratings: ');
-      setState(() => _isLoadingRating = false);
+      debugPrint('Error fetching lawyer ratings: $e');
     }
   }
 
@@ -85,33 +83,15 @@ class _LawyerPublicProfileScreenState extends State<LawyerPublicProfileScreen> {
       }
     }
 
-    // Add dummy data if empty
-    if (parsedAchievements.isEmpty) {
-      parsedAchievements = [
-        {
-          'title': 'Senior Advocate',
-          'year': '2018 - Present',
-          'description':
-              'Representing clients in high-stakes corporate and civil litigation. Successfully resolved over 100+ complex disputes.',
-        },
-        {
-          'title': 'Legal Consultant',
-          'year': '2014 - 2018',
-          'description':
-              'Provided comprehensive legal counsel on compliance, dispute resolution, and contract negotiations for major tech firms.',
-        },
-      ];
-    }
-
     return parsedAchievements;
   }
 
   @override
   Widget build(BuildContext context) {
-    final name = widget.lawyer['username'] ?? 'Adv. Sharma';
+    final name = widget.lawyer['username'] ?? 'Advocate';
     final spec = widget.lawyer['specialization']?.toString().isNotEmpty == true
         ? widget.lawyer['specialization']
-        : 'Corporate Law & Civil Litigation';
+        : 'Advocate / Legal Practitioner';
 
     final requestProvider = Provider.of<RequestProvider>(context);
     final alreadyBooked = requestProvider.requests.any(
@@ -123,17 +103,20 @@ class _LawyerPublicProfileScreenState extends State<LawyerPublicProfileScreen> {
           req.status != 'Resolved',
     );
 
-    String rawExp = widget.lawyer['experience']?.toString() ?? '0';
-    final exp = (rawExp == '0' || rawExp.isEmpty) ? '10' : rawExp;
+    String rawExp = widget.lawyer['experience']?.toString() ?? '';
+    final exp = (rawExp.isEmpty || rawExp == '0')
+        ? LawyerRatingService.getExperienceString(widget.lawyer)
+        : (rawExp.toLowerCase().contains('yr') || rawExp.toLowerCase().contains('year'))
+            ? rawExp
+            : '$rawExp+ Yrs Experience';
 
     final bio = widget.lawyer['bio']?.toString().isNotEmpty == true
         ? widget.lawyer['bio']
-        : 'Dedicated and results-driven legal professional with extensive experience in Corporate Law and Civil Litigation. Proven track record of representing clients in high-stakes negotiations and courtroom proceedings.';
+        : 'No biography added yet.';
 
     final achievements = _getAchievements();
 
     final int nameHash = name.hashCode;
-    final int consultations = (nameHash % 200) + 50;
     final int connections = (nameHash % 500) + 150;
 
     return Scaffold(
@@ -260,7 +243,7 @@ class _LawyerPublicProfileScreenState extends State<LawyerPublicProfileScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '$spec | $exp+ Years of Experience',
+                          '$spec | $exp',
                           style: GoogleFonts.inter(
                             fontSize: 15,
                             color: Colors.black87,
@@ -275,42 +258,97 @@ class _LawyerPublicProfileScreenState extends State<LawyerPublicProfileScreen> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        Row(
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            Icon(
-                              Icons.star,
-                              color: Colors.amber[600],
-                              size: 16,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '$_displayRating',
-                              style: GoogleFonts.inter(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
+                            if (_reviewsCount == 0) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF1A365D).withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: const Color(0xFF1A365D).withOpacity(0.2)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.workspace_premium_outlined,
+                                      color: Color(0xFF1A365D),
+                                      size: 15,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      exp,
+                                      style: GoogleFonts.inter(
+                                        color: const Color(0xFF1A365D),
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            Text(
-                              ' ($consultations+ consultations)',
-                              style: GoogleFonts.inter(
-                                color: Colors.grey[600],
-                                fontSize: 14,
+                              Text(
+                                '(Newly Registered)',
+                                style: GoogleFonts.inter(
+                                  color: Colors.grey[600],
+                                  fontSize: 12,
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 16),
-                            Text(
-                              '•',
-                              style: GoogleFonts.inter(color: Colors.grey[600]),
-                            ),
-                            const SizedBox(width: 16),
-                            Text(
-                              '$connections+ Connections',
-                              style: GoogleFonts.inter(
-                                color: const Color(0xFF0A66C2),
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
+                              Text(
+                                '•',
+                                style: GoogleFonts.inter(color: Colors.grey[600]),
                               ),
-                            ),
+                              Text(
+                                '$connections+ Connections',
+                                style: GoogleFonts.inter(
+                                  color: const Color(0xFF0A66C2),
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ] else ...[
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.star,
+                                    color: Colors.amber[600],
+                                    size: 16,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _displayRating.toStringAsFixed(1),
+                                    style: GoogleFonts.inter(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Text(
+                                '($_reviewsCount ${_reviewsCount == 1 ? 'client review' : 'client reviews'})',
+                                style: GoogleFonts.inter(
+                                  color: Colors.grey[600],
+                                  fontSize: 13,
+                                ),
+                              ),
+                              Text(
+                                '•',
+                                style: GoogleFonts.inter(color: Colors.grey[600]),
+                              ),
+                              Text(
+                                '$connections+ Connections',
+                                style: GoogleFonts.inter(
+                                  color: const Color(0xFF0A66C2),
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                         const SizedBox(height: 16),
@@ -351,6 +389,39 @@ class _LawyerPublicProfileScreenState extends State<LawyerPublicProfileScreen> {
                                 fontWeight: FontWeight.w700,
                                 fontSize: 16,
                               ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () async {
+                              final rated = await LawyerRatingService.showRatingDialog(
+                                context: context,
+                                lawyerId: widget.lawyer['id']?.toString() ?? '',
+                                lawyerName: name,
+                              );
+                              if (rated == true && mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Rating and review recorded successfully!'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                                _fetchLawyerRating();
+                              }
+                            },
+                            icon: const Icon(Icons.star_rate_rounded, size: 18),
+                            label: Text(
+                              'Rate Experience with $name',
+                              style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF1A365D),
+                              side: BorderSide(color: const Color(0xFF1A365D).withOpacity(0.3)),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
                             ),
                           ),
                         ),

@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:convert';
 import 'package:cryptography/cryptography.dart';
 import 'package:archive/archive.dart';
@@ -42,7 +41,7 @@ class EvidenceEncryptionService {
     // Use level 0 (No Compression) to dramatically speed up video/large file zipping
     final zipData = zipEncoder.encode(archive, level: 0);
     
-    if (zipData == null) {
+    if (zipData.isEmpty) {
       throw Exception('Failed to create evidence package (ZIP).');
     }
 

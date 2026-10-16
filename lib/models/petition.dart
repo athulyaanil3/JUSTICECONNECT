@@ -24,8 +24,8 @@ class Petition {
       lawyerId: json['lawyer_id'],
       petitionUrl: json['petition_url'],
       status: json['status'] ?? 'Submitted',
-      submittedAt: DateTime.parse(json['submitted_at']),
-      updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at']) : null,
+      submittedAt: DateTime.parse(json['submitted_at']).toLocal(),
+      updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at']).toLocal() : null,
     );
   }
 
