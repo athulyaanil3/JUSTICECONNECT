@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../models/legal_case.dart';
+import '../../../services/email_notification_service.dart';
 import '../../widgets/causelist_card.dart';
 
 class CauselistTab extends StatefulWidget {
@@ -57,27 +58,49 @@ class _CauselistTabState extends State<CauselistTab> {
     if (widget.role == 'Citizen') return;
 
     final purposeController = TextEditingController(text: c.purpose);
+    final statusController = TextEditingController(text: c.status);
     DateTime? selectedDate = c.nextHearingDate;
-    String selectedStatus = c.status;
+
+    final commonStatuses = [
+      'Ongoing',
+      'Hearing Scheduled',
+      'Adjourned',
+      'Arguments Heard',
+      'Order Reserved',
+      'Disposed',
+      'Completed',
+      'Resolved',
+      'Dismissed',
+    ];
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setState) {
           return AlertDialog(
-            title: const Text('Update Case Status'),
+            title: Text('Update Hearing Details', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   TextField(
                     controller: purposeController,
-                    decoration: const InputDecoration(labelText: 'Purpose', hintText: 'e.g. Next Hearing, Final Argument'),
+                    decoration: const InputDecoration(
+                      labelText: 'Purpose', 
+                      hintText: 'e.g. Next Hearing, Final Argument',
+                    ),
                   ),
                   const SizedBox(height: 12),
                   ListTile(
-                    title: Text(selectedDate == null ? 'Select Next Hearing Date' : 'Next Hearing: ${selectedDate!.toString().substring(0, 10)}'),
-                    trailing: const Icon(Icons.calendar_today),
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      selectedDate == null 
+                        ? 'Select Next Hearing Date' 
+                        : 'Next Hearing: ${selectedDate!.toString().substring(0, 10)}',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w500),
+                    ),
+                    trailing: const Icon(Icons.calendar_today, color: Color(0xFF0D256C)),
                     onTap: () async {
                       final date = await showDatePicker(
                         context: context,
@@ -91,13 +114,49 @@ class _CauselistTabState extends State<CauselistTab> {
                     },
                   ),
                   const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    value: selectedStatus,
-                    items: ['Ongoing', 'Completed', 'Resolved'].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                  Text(
+                    'Case Status',
+                    style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey[700]),
+                  ),
+                  const SizedBox(height: 4),
+                  TextFormField(
+                    controller: statusController,
+                    decoration: InputDecoration(
+                      hintText: 'Type custom status or choose from list...',
+                      suffixIcon: PopupMenuButton<String>(
+                        icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF0D256C)),
+                        tooltip: 'Select status',
+                        onSelected: (val) {
+                          statusController.text = val;
+                          setState(() {});
+                        },
+                        itemBuilder: (context) => commonStatuses
+                            .map((s) => PopupMenuItem(value: s, child: Text(s)))
+                            .toList(),
+                      ),
+                    ),
                     onChanged: (val) {
-                      if (val != null) setState(() => selectedStatus = val);
+                      setState(() {});
                     },
-                    decoration: const InputDecoration(labelText: 'Case Status'),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: ['Ongoing', 'Adjourned', 'Hearing Scheduled', 'Completed', 'Resolved'].map((s) {
+                      final isSelected = statusController.text.trim().toLowerCase() == s.toLowerCase();
+                      return ChoiceChip(
+                        label: Text(s, style: TextStyle(fontSize: 11, color: isSelected ? Colors.white : Colors.black87)),
+                        selected: isSelected,
+                        selectedColor: const Color(0xFF0D256C),
+                        onSelected: (selected) {
+                          if (selected) {
+                            statusController.text = s;
+                            setState(() {});
+                          }
+                        },
+                      );
+                    }).toList(),
                   ),
                 ],
               ),
@@ -105,8 +164,13 @@ class _CauselistTabState extends State<CauselistTab> {
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
               ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0D256C),
+                  foregroundColor: Colors.white,
+                ),
                 onPressed: () async {
-                  await _updateCase(c.id, selectedDate, purposeController.text, selectedStatus);
+                  final finalStatus = statusController.text.trim().isEmpty ? 'Ongoing' : statusController.text.trim();
+                  await _updateCase(c.id, selectedDate, purposeController.text, finalStatus);
                   if (context.mounted) Navigator.pop(ctx);
                 },
                 child: const Text('Update'),
@@ -127,13 +191,22 @@ class _CauselistTabState extends State<CauselistTab> {
         'updated_at': DateTime.now().toIso8601String(),
       }).eq('id', caseId);
 
+      final updateDesc = 'Updated by ${widget.role}. Next Hearing: ${nextHearing?.toIso8601String().substring(0,10)}. Purpose: $purpose.';
       await _supabase.from('case_updates').insert({
         'case_id': caseId,
         'update_type': 'Case Details Updated',
-        'description': 'Updated by ${widget.role}. Next Hearing: ${nextHearing?.toIso8601String().substring(0,10)}. Purpose: $purpose.',
+        'description': updateDesc,
         'created_by': _supabase.auth.currentUser!.id,
         'created_at': DateTime.now().toIso8601String(),
       });
+
+      // Send email to user
+      EmailNotificationService.sendCaseUpdateEmail(
+        caseId: caseId,
+        updateType: 'Case Details Updated',
+        description: updateDesc,
+        role: widget.role,
+      );
 
       _fetchCauselist();
       if (mounted) {
@@ -147,14 +220,21 @@ class _CauselistTabState extends State<CauselistTab> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
+      backgroundColor: const Color(0xFFF7F9FC),
       appBar: AppBar(
-        title: Text('Causelist', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+        title: Text(
+          'Hearing Schedule',
+          style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 20, color: const Color(0xFF0D256C)),
+        ),
         backgroundColor: Colors.white,
         foregroundColor: const Color(0xFF0D256C),
-        elevation: 1,
+        elevation: 0.5,
         actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _fetchCauselist),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _fetchCauselist,
+            tooltip: 'Refresh',
+          ),
         ],
       ),
       body: _isLoading 
@@ -162,7 +242,7 @@ class _CauselistTabState extends State<CauselistTab> {
         : _cases.isEmpty 
           ? Center(
               child: Text(
-                'No official cases found in your Causelist.', 
+                'No hearings scheduled yet.', 
                 style: GoogleFonts.inter(color: Colors.grey, fontSize: 16),
               )
             )

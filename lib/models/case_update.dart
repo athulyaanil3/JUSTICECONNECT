@@ -22,7 +22,7 @@ class CaseUpdate {
       updateType: json['update_type'],
       description: json['description'],
       createdBy: json['created_by'],
-      createdAt: DateTime.parse(json['created_at']),
+      createdAt: DateTime.parse(json['created_at']).toLocal(),
     );
   }
 

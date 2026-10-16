@@ -16,9 +16,12 @@ class _AdvocateClerkVerificationTabState extends State<AdvocateClerkVerification
       child: Column(
         children: [
           TabBar(
-            labelColor: Theme.of(context).primaryColor,
-            unselectedLabelColor: Colors.grey,
-            indicatorColor: Theme.of(context).primaryColor,
+            labelColor: const Color(0xFF0D256C),
+            unselectedLabelColor: Colors.grey[600],
+            indicatorColor: const Color(0xFF0D256C),
+            indicatorWeight: 3,
+            labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14),
+            unselectedLabelStyle: GoogleFonts.inter(fontWeight: FontWeight.normal, fontSize: 14),
             tabs: const [
               Tab(text: 'Case Preparation'),
               Tab(text: 'Document Check'),
@@ -66,16 +69,24 @@ class _AdvocateClerkVerificationTabState extends State<AdvocateClerkVerification
                     Expanded(
                       child: OutlinedButton(
                         onPressed: () { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Feature available in full version'))); },
-                        style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
-                        child: const Text('Request Client Correction', textAlign: TextAlign.center),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red[700],
+                          side: BorderSide(color: Colors.red.shade200),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        child: Text('Request Correction', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: ElevatedButton(
                         onPressed: () { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Feature available in full version'))); },
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
-                        child: const Text('Ready for Review', textAlign: TextAlign.center),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0D256C),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        child: Text('Ready for Review', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
                       ),
                     ),
                   ],
@@ -123,16 +134,24 @@ class _AdvocateClerkVerificationTabState extends State<AdvocateClerkVerification
                     Expanded(
                       child: OutlinedButton(
                         onPressed: () { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Feature available in full version'))); },
-                        style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
-                        child: const Text('Request Correction', textAlign: TextAlign.center),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red[700],
+                          side: BorderSide(color: Colors.red.shade200),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        child: Text('Request Correction', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: ElevatedButton(
                         onPressed: () { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Feature available in full version'))); },
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
-                        child: const Text('Approve Document', textAlign: TextAlign.center),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0D256C),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        child: Text('Approve Document', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
                       ),
                     ),
                   ],

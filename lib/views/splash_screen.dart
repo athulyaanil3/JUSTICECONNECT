@@ -11,11 +11,12 @@ import 'dashboard/advocate_clerk_dashboard.dart';
 import 'auth/pending_approval_screen.dart';
 import 'auth/lawyer_verification_screen.dart';
 import 'auth/advocate_clerk_verification_screen.dart';
+
 class SplashScreen extends StatefulWidget {
-  const SplashScreen({Key? key}) : super(key: key);
+  const SplashScreen({super.key});
 
   @override
-  _SplashScreenState createState() => _SplashScreenState();
+  State<SplashScreen> createState() => _SplashScreenState();
 }
 
 class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
@@ -58,10 +59,17 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
           if (!mounted) return;
           
           if (data != null) {
-            final role = data['role'];
+            final role = data['role']?.toString();
             final isVerified = data['is_verified'];
             
-            if (role == 'Citizen') {
+            if (role == 'Administrator') {
+              await prefs.setBool('isAdminLoggedIn', true);
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const AdminDashboard()),
+                (route) => false,
+              );
+              return;
+            } else if (role == 'Citizen') {
               Navigator.of(context).pushAndRemoveUntil(
                 MaterialPageRoute(builder: (_) => const CitizenDashboard()),
                 (route) => false,
@@ -95,21 +103,37 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
               return;
             }
           } else {
-             // User has a session but no profile row yet (e.g., killed app before uploading documents)
-             final metaRole = session.user.userMetadata?['role'];
-             if (metaRole == 'Lawyer') {
-               Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const LawyerVerificationScreen()),
-                  (route) => false,
-               );
-               return;
-             } else if (metaRole == 'Advocate Clerk') {
-               Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const AdvocateClerkVerificationScreen()),
-                  (route) => false,
-               );
-               return;
-             }
+            // User has an active session but no profile row yet
+            final metaRole = session.user.userMetadata?['role'];
+            if (metaRole == 'Lawyer') {
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const LawyerVerificationScreen()),
+                (route) => false,
+              );
+              return;
+            } else if (metaRole == 'Advocate Clerk') {
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const AdvocateClerkVerificationScreen()),
+                (route) => false,
+              );
+              return;
+            } else {
+              // Citizen or generic
+              try {
+                await Supabase.instance.client.from('profiles').insert({
+                  'id': session.user.id,
+                  'username': session.user.userMetadata?['username'] ?? session.user.email?.split('@')[0] ?? 'Citizen',
+                  'email': session.user.email ?? '',
+                  'role': 'Citizen',
+                  'is_verified': true,
+                });
+              } catch (_) {}
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const CitizenDashboard()),
+                (route) => false,
+              );
+              return;
+            }
           }
         } catch (e) {
           debugPrint('Error getting user profile for auto-login: $e');
@@ -141,7 +165,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
           Image.asset(
             'assets/images/bg_justice.jpg',
             fit: BoxFit.cover,
-            color: Colors.black.withOpacity(0.4),
+            color: Colors.black.withValues(alpha: 0.4),
             colorBlendMode: BlendMode.darken,
           ),
           
@@ -167,7 +191,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                       letterSpacing: 1.2,
                       shadows: [
                         Shadow(
-                          color: Colors.black.withOpacity(0.5),
+                          color: Colors.black.withValues(alpha: 0.5),
                           blurRadius: 10,
                           offset: const Offset(0, 4),
                         ),
@@ -179,7 +203,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                     'AI-Powered Legal Assistance',
                     style: GoogleFonts.inter(
                       fontSize: 16,
-                      color: Colors.white.withOpacity(0.9),
+                      color: Colors.white.withValues(alpha: 0.9),
                       letterSpacing: 0.5,
                     ),
                   ),
