@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-// removed flutter_windowmanager import
 import '../../../controllers/filing_chat_provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:io';
-import 'package:uuid/uuid.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../services/evidence_encryption_service.dart';
-import '../../../services/pattern_verification_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../shared/secure_evidence_viewer.dart';
 
 class FilingChatScreen extends StatefulWidget {
@@ -34,21 +31,14 @@ class _FilingChatScreenState extends State<FilingChatScreen> {
   @override
   void initState() {
     super.initState();
-    _secureScreen();
-    // Use Future.microtask to load chat without blocking initial render
     Future.microtask(() {
       Provider.of<FilingChatProvider>(context, listen: false)
           .loadChatForFiling(widget.filingId);
     });
   }
 
-  Future<void> _secureScreen() async {
-    // await FlutterWindowManager.addFlags(FlutterWindowManager.FLAG_SECURE);
-  }
-
   @override
   void dispose() {
-    // FlutterWindowManager.clearFlags(FlutterWindowManager.FLAG_SECURE);
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -69,35 +59,25 @@ class _FilingChatScreenState extends State<FilingChatScreen> {
     }
   }
 
-  Future<void> _uploadEncryptedFile() async {
+  Future<void> _uploadFile() async {
     try {
       final result = await FilePicker.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'mp4'],
+        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'docx', 'doc', 'txt', 'mp4'],
       );
 
-      if (result == null || result.isEmpty) return;
+      if (result.isEmpty || result.first.path == null) return;
       
-      final files = result.map((f) => File(f.path!)).toList();
+      final file = File(result.first.path!);
+      final fileName = result.first.name;
+      final fileSize = await file.length();
       
-      num totalSize = 0;
-      for (var f in files) {
-        totalSize += await f.length();
-      }
-      if (totalSize > 50 * 1024 * 1024) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Total file size must not exceed 50MB.')));
-        return;
-      }
-
-      // 🔐 Pattern Verification Before Sending 🔐
-      final isAuthenticated = await PatternVerificationService.authenticate(
-        context: context,
-        reason: 'Please draw your pattern to authorize this secure evidence transfer.',
-        userKey: Supabase.instance.client.auth.currentUser?.email,
-      );
-
-      if (!isAuthenticated) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Authentication failed. File not sent.')));
+      if (fileSize > 50 * 1024 * 1024) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('File size must not exceed 50MB.')),
+          );
+        }
         return;
       }
 
@@ -110,50 +90,30 @@ class _FilingChatScreenState extends State<FilingChatScreen> {
             children: [
               CircularProgressIndicator(),
               SizedBox(height: 16),
-              Text('Encrypting & Sending securely...'),
+              Text('Sending file...'),
             ],
           ),
         ),
       );
 
-      final encryptionService = EvidenceEncryptionService();
-      final encryptionResult = await encryptionService.encryptEvidencePackage(files);
-      
-      final documentId = const Uuid().v4();
-      final storagePath = '${widget.filingId}/$documentId.enc';
       final supabase = Supabase.instance.client;
+      final sanitizedName = fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+      final storagePath = 'filing_chats/${widget.filingId}/${DateTime.now().millisecondsSinceEpoch}_$sanitizedName';
 
-      // Upload encrypted file
-      await supabase.storage.from('case-evidence').upload(storagePath, encryptionResult.encryptedFile);
+      // Direct upload in unencrypted format
+      await supabase.storage.from('documents').upload(
+        storagePath,
+        file,
+        fileOptions: const FileOptions(upsert: true),
+      );
 
-      // Insert metadata
-      final userId = supabase.auth.currentUser!.id;
-      await supabase.from('case_documents').insert({
-        'id': documentId,
-        'case_id': widget.filingId,
-        'uploaded_by': userId,
-        'document_type': 'Evidence Package',
-        'document_name': 'Encrypted Chat Evidence',
-        'storage_path': storagePath,
-        'file_size': await encryptionResult.encryptedFile.length(),
-        'mime_type': 'application/octet-stream',
-        'encryption_algorithm': encryptionResult.algorithm,
-        'encryption_version': encryptionResult.version,
-        'encrypted_key': encryptionResult.keyBase64,
-        'nonce': encryptionResult.nonceBase64,
-        'verification_status': 'Pending',
-      });
+      final fileUrl = supabase.storage.from('documents').getPublicUrl(storagePath);
 
-      // Cleanup temp encrypted file
-      if (await encryptionResult.encryptedFile.exists()) {
-        await encryptionResult.encryptedFile.delete();
-      }
+      if (mounted) Navigator.pop(context); // Close loading dialog
 
-      if (mounted) Navigator.pop(context); // Close loading
-
-      // Send chat message
+      // Send chat message with file name and direct URL
       Provider.of<FilingChatProvider>(context, listen: false)
-          .sendMessage('[ENCRYPTED_FILE]', widget.currentUserRole);
+          .sendMessage('[FILE]:$fileName|$fileUrl', widget.currentUserRole);
 
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
@@ -164,10 +124,105 @@ class _FilingChatScreenState extends State<FilingChatScreen> {
       }
 
     } catch (e) {
-      if (mounted) Navigator.pop(context);
+      if (mounted && Navigator.canPop(context)) Navigator.pop(context);
       debugPrint('Upload error: $e');
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Upload failed: $e')),
+        );
+      }
     }
+  }
+
+  Widget _buildFileCard(String messageText, bool isMe) {
+    final content = messageText.substring(7);
+    final parts = content.split('|');
+    final fileName = parts.first;
+    final fileUrl = parts.length > 1 ? parts[1] : '';
+
+    final lower = fileName.toLowerCase();
+    final isPdf = lower.endsWith('.pdf');
+    final isImg = lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png');
+
+    return InkWell(
+      onTap: () async {
+        if (fileUrl.isNotEmpty) {
+          final uri = Uri.parse(fileUrl);
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          } else {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Could not open file URL')),
+              );
+            }
+          }
+        }
+      },
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isMe ? Colors.white.withOpacity(0.18) : Colors.grey[100],
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isMe ? Colors.white30 : Colors.grey[300]!,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: isMe ? Colors.white : const Color(0xFF0D256C),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Icon(
+                isPdf
+                    ? Icons.picture_as_pdf
+                    : (isImg ? Icons.image : Icons.insert_drive_file),
+                size: 20,
+                color: isMe ? const Color(0xFF0D256C) : Colors.white,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    fileName,
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      color: isMe ? Colors.white : Colors.black87,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Tap to view / download',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: isMe ? Colors.white70 : Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              Icons.open_in_new,
+              size: 16,
+              color: isMe ? Colors.white70 : Colors.grey[700],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -178,26 +233,34 @@ class _FilingChatScreenState extends State<FilingChatScreen> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Chat', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 18)),
-            Text(widget.filingTitle, style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[300])),
+            Text(
+              widget.currentUserRole == 'Lawyer' ? 'Clerk Chat' : 'Lawyer Chat',
+              style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+            Text(
+              widget.filingTitle, 
+              style: GoogleFonts.inter(fontSize: 12, color: Colors.white70),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ],
         ),
-        backgroundColor: Theme.of(context).primaryColor,
+        backgroundColor: const Color(0xFF0D256C),
         foregroundColor: Colors.white,
       ),
       body: Column(
         children: [
           Expanded(
             child: Consumer<FilingChatProvider>(
-              builder: (context, provider, child) {
-                if (provider.isLoading && provider.messages.isEmpty) {
+              builder: (context, chatProvider, child) {
+                if (chatProvider.isLoading) {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                if (provider.messages.isEmpty) {
+                if (chatProvider.messages.isEmpty) {
                   return Center(
                     child: Text(
-                      'No messages yet. Start the conversation!',
+                      'No messages yet. Send a message to coordinate.',
                       style: GoogleFonts.inter(color: Colors.grey),
                     ),
                   );
@@ -206,35 +269,59 @@ class _FilingChatScreenState extends State<FilingChatScreen> {
                 return ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.all(16),
-                  itemCount: provider.messages.length,
+                  itemCount: chatProvider.messages.length,
                   itemBuilder: (context, index) {
-                    final message = provider.messages[index];
-                    final bool isMe = message['sender_role'] == widget.currentUserRole;
+                    final message = chatProvider.messages[index];
+                    final isMe = message['sender_role'] == widget.currentUserRole;
+                    final msgText = (message['text'] ?? '').toString();
+                    final isFile = msgText.startsWith('[FILE]:');
+                    final isLegacyEncrypted = msgText == '[ENCRYPTED_FILE]';
 
                     return Align(
                       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
                       child: Container(
                         margin: const EdgeInsets.symmetric(vertical: 4),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isFile ? 4 : 14,
+                          vertical: isFile ? 4 : 10,
+                        ),
                         decoration: BoxDecoration(
                           color: isMe ? Theme.of(context).primaryColor : Colors.white,
-                          borderRadius: BorderRadius.circular(20),
-                          border: isMe ? null : Border.all(color: Colors.grey[300]!),
+                          borderRadius: BorderRadius.only(
+                            topLeft: const Radius.circular(16),
+                            topRight: const Radius.circular(16),
+                            bottomLeft: isMe ? const Radius.circular(16) : const Radius.circular(0),
+                            bottomRight: isMe ? const Radius.circular(0) : const Radius.circular(16),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.04),
+                              offset: const Offset(0, 2),
+                              blurRadius: 4,
+                            ),
+                          ],
+                        ),
+                        constraints: BoxConstraints(
+                          maxWidth: MediaQuery.of(context).size.width * 0.78,
                         ),
                         child: Column(
                           crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                           children: [
                             if (!isMe)
-                              Text(
-                                message['sender_role'] ?? '',
-                                style: GoogleFonts.inter(
-                                  fontSize: 10,
-                                  color: Colors.grey[600],
-                                  fontWeight: FontWeight.bold,
+                              Padding(
+                                padding: EdgeInsets.only(left: isFile ? 8 : 0, bottom: 2, top: isFile ? 4 : 0),
+                                child: Text(
+                                  message['sender_role'] ?? 'Office',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    color: Colors.grey[600],
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
-                            const SizedBox(height: 2),
-                            if (message['text'] == '[ENCRYPTED_FILE]')
+                            if (isFile)
+                              _buildFileCard(msgText, isMe)
+                            else if (isLegacyEncrypted)
                               ElevatedButton.icon(
                                 onPressed: () {
                                   showModalBottomSheet(
@@ -264,7 +351,7 @@ class _FilingChatScreenState extends State<FilingChatScreen> {
                               )
                             else
                               Text(
-                                message['text'] ?? '',
+                                msgText,
                                 style: GoogleFonts.inter(
                                   color: isMe ? Colors.white : Colors.black87,
                                   fontSize: 15,
@@ -303,7 +390,8 @@ class _FilingChatScreenState extends State<FilingChatScreen> {
           children: [
             IconButton(
               icon: Icon(Icons.attach_file, color: Colors.grey[600]),
-              onPressed: _uploadEncryptedFile,
+              tooltip: 'Attach File',
+              onPressed: _uploadFile,
             ),
             Expanded(
               child: TextField(
@@ -337,5 +425,3 @@ class _FilingChatScreenState extends State<FilingChatScreen> {
     );
   }
 }
-
-

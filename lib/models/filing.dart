@@ -30,7 +30,7 @@ class Filing {
       userId: json['user_id'],
       lawyerId: json['lawyer_id'],
       status: json['status'],
-      submittedAt: DateTime.parse(json['submitted_at']),
+      submittedAt: DateTime.parse(json['submitted_at']).toLocal(),
       documents: List<String>.from(json['documents'] ?? []),
     );
   }

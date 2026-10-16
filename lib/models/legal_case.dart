@@ -39,7 +39,7 @@ class LegalCase {
 
   factory LegalCase.fromJson(Map<String, dynamic> json) {
     return LegalCase(
-      id: json['id'],
+      id: json['id']?.toString() ?? '',
       caseNumber: json['case_number'] ?? '',
       title: json['title'] ?? json['case_title'] ?? '',
       category: json['category'] ?? json['case_category'] ?? '',
@@ -47,13 +47,13 @@ class LegalCase {
       lawyerId: json['lawyer_id'] ?? '',
       advocateClerkId: json['advocate_clerk_id'] ?? json['bench_clerk_id'] ?? '', // fallback for migration
       description: json['description'] ?? json['case_description'] ?? '',
-      registeredAt: DateTime.parse(json['registered_at'] ?? json['created_at']),
-      updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at']) : null,
+      registeredAt: (DateTime.tryParse(json['registered_at']?.toString() ?? json['created_at']?.toString() ?? '') ?? DateTime.now()).toLocal(),
+      updatedAt: json['updated_at'] != null ? DateTime.tryParse(json['updated_at'].toString())?.toLocal() : null,
       status: json['status'] ?? 'Submitted',
       petitioner: json['petitioner'],
       respondent: json['respondent'],
       courtName: json['court_name'],
-      nextHearingDate: json['next_hearing_date'] != null ? DateTime.parse(json['next_hearing_date']) : null,
+      nextHearingDate: json['next_hearing_date'] != null ? DateTime.tryParse(json['next_hearing_date'].toString())?.toLocal() : null,
       purpose: json['purpose'],
     );
   }

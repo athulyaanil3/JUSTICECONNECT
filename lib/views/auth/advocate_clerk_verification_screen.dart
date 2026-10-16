@@ -2,21 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 import 'pending_approval_screen.dart';
 
 class AdvocateClerkVerificationScreen extends StatefulWidget {
-  const AdvocateClerkVerificationScreen({Key? key}) : super(key: key);
+  const AdvocateClerkVerificationScreen({super.key});
 
   @override
-  _AdvocateClerkVerificationScreenState createState() => _AdvocateClerkVerificationScreenState();
+  State<AdvocateClerkVerificationScreen> createState() => _AdvocateClerkVerificationScreenState();
 }
 
 class _AdvocateClerkVerificationScreenState extends State<AdvocateClerkVerificationScreen> {
   final _formKey = GlobalKey<FormState>();
   final _empIdController = TextEditingController();
-  final _courtNameController = TextEditingController();
   final _lawyerUrlController = TextEditingController();
   
   String _selectedDistrict = 'Thiruvananthapuram';
@@ -31,6 +29,12 @@ class _AdvocateClerkVerificationScreenState extends State<AdvocateClerkVerificat
     'Malappuram', 'Kozhikode', 'Wayanad', 'Kannur', 'Kasaragod'
   ];
 
+  @override
+  void dispose() {
+    _empIdController.dispose();
+    _lawyerUrlController.dispose();
+    super.dispose();
+  }
 
   Future<void> _submitVerification() async {
     if (!_formKey.currentState!.validate()) return;
@@ -65,6 +69,7 @@ class _AdvocateClerkVerificationScreenState extends State<AdvocateClerkVerificat
           .maybeSingle();
 
       if (lawyerQuery == null) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Could not find a Lawyer with that URL. Please check the link.'), backgroundColor: Colors.red),
         );
@@ -77,63 +82,64 @@ class _AdvocateClerkVerificationScreenState extends State<AdvocateClerkVerificat
       final user = Supabase.instance.client.auth.currentUser;
       if (user != null) {
         final userMeta = user.userMetadata;
-        final username = (userMeta != null && userMeta.containsKey('username')) 
+        final clerkUsername = (userMeta != null && userMeta.containsKey('username')) 
             ? userMeta['username'] 
             : 'Unknown';
 
         String? uploadedDocName;
         if (_selectedFile != null) {
+          final originalName = _selectedFile!.path.split(Platform.pathSeparator).last.replaceAll(' ', '_');
+          uploadedDocName = 'clerk_verification_${user.id}_$originalName';
           try {
-            final originalName = _selectedFile!.path.split(Platform.pathSeparator).last.replaceAll(' ', '_');
-            uploadedDocName = 'clerk_verification_${user.id}_$originalName';
-            await Supabase.instance.client.storage.from('documents').upload(
+            final fileBytes = await _selectedFile!.readAsBytes();
+            await Supabase.instance.client.storage.from('documents').uploadBinary(
               uploadedDocName, 
-              _selectedFile!,
+              fileBytes,
               fileOptions: const FileOptions(upsert: true),
             );
           } catch (storageErr) {
-            // Throw so the outer catch block catches it and shows the SnackBar
-            throw Exception('Storage error: Please ensure the "documents" bucket exists and is public in Supabase. Details: $storageErr');
+            debugPrint('Storage upload non-fatal warning: $storageErr. Proceeding with registration.');
           }
         }
 
         await Supabase.instance.client.from('profiles').upsert({
           'id': user.id,
-          'username': username,
+          'username': clerkUsername,
           'role': 'Advocate Clerk',
           'email': user.email,
-          'court_id': _courtNameController.text.trim(),
           'court_district': _selectedDistrict,
           'is_verified': null,
           'associated_lawyer_id': lawyerId,
-          if (uploadedDocName != null) 'verification_document': uploadedDocName,
+          'verification_document': ?uploadedDocName,
         });
 
         // Notify the lawyer
         await Supabase.instance.client.from('app_notifications').insert({
           'target_user': lawyerQuery['username'],
           'title': 'New Clerk Request',
-          'message': '$username has requested to join as your Advocate Clerk. Please review and approve them in your My Profile tab.',
+          'message': '$clerkUsername has requested to join as your Advocate Clerk. Tap to review their verification document and details.',
           'is_read': false,
+          'action_payload': user.id,
           'created_at': DateTime.now().toIso8601String(),
         });
       }
 
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Verification details submitted successfully!')),
       );
       
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const PendingApprovalScreen()),
-        );
-      }
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const PendingApprovalScreen()),
+      );
     } catch (e) {
       debugPrint('Error saving verification: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -201,19 +207,8 @@ class _AdvocateClerkVerificationScreenState extends State<AdvocateClerkVerificat
               ),
               const SizedBox(height: 20),
               
-              TextFormField(
-                controller: _courtNameController,
-                decoration: const InputDecoration(
-                  labelText: 'Assigned Court Name (e.g. District Court)',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.account_balance),
-                ),
-                validator: (value) => value!.isEmpty ? 'Required field' : null,
-              ),
-              const SizedBox(height: 20),
-              
               DropdownButtonFormField<String>(
-                value: _selectedDistrict,
+                initialValue: _selectedDistrict,
                 decoration: const InputDecoration(
                   labelText: 'Court District',
                   border: OutlineInputBorder(),
@@ -226,9 +221,11 @@ class _AdvocateClerkVerificationScreenState extends State<AdvocateClerkVerificat
                   );
                 }).toList(),
                 onChanged: (String? newValue) {
-                  setState(() {
-                    _selectedDistrict = newValue!;
-                  });
+                  if (newValue != null) {
+                    setState(() {
+                      _selectedDistrict = newValue;
+                    });
+                  }
                 },
               ),
               const SizedBox(height: 20),

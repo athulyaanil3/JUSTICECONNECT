@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:intl/intl.dart';
 import '../services/encryption_service.dart';
 import '../models/consultation_request.dart';
 import 'package:uuid/uuid.dart';
@@ -16,20 +17,58 @@ class RequestProvider with ChangeNotifier {
 
   RequestProvider() {
     _setupRealtime();
+    _setupAuthListener();
+    if (_supabase.auth.currentUser != null) {
+      fetchRequests();
+    }
+  }
+
+  void _setupAuthListener() {
+    _supabase.auth.onAuthStateChange.listen((data) {
+      final event = data.event;
+      if (event == AuthChangeEvent.signedIn ||
+          event == AuthChangeEvent.tokenRefreshed ||
+          event == AuthChangeEvent.userUpdated) {
+        fetchRequests();
+      } else if (event == AuthChangeEvent.signedOut) {
+        clear();
+      }
+    });
+  }
+
+  void clear() {
+    _requests = [];
+    _currentUsername = null;
+    _currentRole = null;
+    notifyListeners();
   }
 
   void _setupRealtime() {
     if (_isListening) return;
     _isListening = true;
     
+    // Listen to real-time chat messages
     _supabase
-        .channel('public:chat_messages')
+        .channel('public:chat_messages_realtime')
         .onPostgresChanges(
           event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'chat_messages',
           callback: (payload) {
-            fetchRequests(); // Automatically fetch new messages
+            fetchRequests();
+          },
+        )
+        .subscribe();
+
+    // Also listen to consultation request updates
+    _supabase
+        .channel('public:consultation_requests_realtime')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'consultation_requests',
+          callback: (payload) {
+            fetchRequests();
           },
         )
         .subscribe();
@@ -41,22 +80,61 @@ class RequestProvider with ChangeNotifier {
   Future<void> fetchRequests() async {
     try {
       final user = _supabase.auth.currentUser;
-      if (user == null) return;
+      if (user == null) {
+        _requests = [];
+        notifyListeners();
+        return;
+      }
 
-      final profile = await _supabase.from('profiles').select('username, role').eq('id', user.id).maybeSingle();
-      if (profile == null) return;
+      // Fetch profile with error tolerance
+      Map<String, dynamic>? profile;
+      try {
+        profile = await _supabase
+            .from('profiles')
+            .select()
+            .eq('id', user.id)
+            .maybeSingle();
+      } catch (e) {
+        debugPrint('Non-critical: error fetching profile in RequestProvider: $e');
+      }
 
-      _currentUsername = profile['username'];
-      _currentRole = profile['role'];
+      final profileUsername = (profile?['username'] ?? '').toString().trim();
+      final metaUsername = (user.userMetadata?['username'] ?? '').toString().trim();
+      final email = (user.email ?? '').trim();
+      final emailPrefix = email.contains('@') ? email.split('@')[0].trim() : '';
+
+      _currentRole = profile?['role'] ?? user.userMetadata?['role'] ?? 'Citizen';
+      _currentUsername = profileUsername.isNotEmpty 
+          ? profileUsername 
+          : (metaUsername.isNotEmpty ? metaUsername : (emailPrefix.isNotEmpty ? emailPrefix : 'User'));
+
+      // Build collection of all possible usernames/identifiers for this account
+      final Set<String> candidates = {};
+      if (profileUsername.isNotEmpty) candidates.add(profileUsername);
+      if (metaUsername.isNotEmpty) candidates.add(metaUsername);
+      if (email.isNotEmpty) candidates.add(email);
+      if (emailPrefix.isNotEmpty) candidates.add(emailPrefix);
+
+      if (candidates.isEmpty) {
+        _requests = [];
+        notifyListeners();
+        return;
+      }
 
       var query = _supabase.from('consultation_requests').select();
 
       if (_currentRole == 'Citizen') {
-        query = query.eq('citizen_name', _currentUsername ?? '');
+        final orFilters = candidates.map((c) => 'citizen_name.ilike.$c').join(',');
+        query = query.or(orFilters);
       } else if (_currentRole == 'Lawyer') {
-        query = query.eq('lawyer_name', _currentUsername ?? '');
+        final orFilters = candidates.map((c) => 'lawyer_name.ilike.$c').join(',');
+        query = query.or(orFilters);
+      } else if (_currentRole != 'Admin') {
+        // Advocate Clerk or other roles
+        _requests = [];
+        notifyListeners();
+        return;
       }
-      // If admin, they see all (or you can restrict it)
 
       final response = await query.order('requested_at', ascending: false);
 
@@ -72,20 +150,42 @@ class RequestProvider with ChangeNotifier {
             
         List<Map<String, dynamic>> messages = [];
         for (var msgRow in messagesResponse) {
+          DateTime? msgTime;
+          if (msgRow['created_at'] != null) {
+            msgTime = DateTime.tryParse(msgRow['created_at'].toString())?.toLocal();
+          }
+          final formattedTime = msgTime != null 
+              ? DateFormat('hh:mm a').format(msgTime) 
+              : '';
+
+          String decryptedText = '';
+          try {
+            decryptedText = EncryptionService.decryptText(msgRow['text'] ?? '');
+          } catch (_) {
+            decryptedText = (msgRow['text'] ?? '').toString();
+          }
+
           messages.add({
-            'text': EncryptionService.decryptText(msgRow['text']),
-            'sender': msgRow['sender'],
-            'time': msgRow['created_at'].toString().substring(11, 16), // simple time parsing
+            'text': decryptedText,
+            'sender': msgRow['sender'] ?? '',
+            'time': formattedTime,
           });
+        }
+
+        DateTime requestedAt;
+        try {
+          requestedAt = DateTime.parse(row['requested_at'].toString()).toLocal();
+        } catch (_) {
+          requestedAt = DateTime.now();
         }
 
         loadedRequests.add(ConsultationRequest(
           id: row['id'],
-          citizenName: row['citizen_name'],
-          lawyerName: row['lawyer_name'],
-          issueDescription: row['issue_description'],
-          status: row['status'],
-          requestedAt: DateTime.parse(row['requested_at']),
+          citizenName: row['citizen_name'] ?? 'Citizen',
+          lawyerName: row['lawyer_name'] ?? 'Lawyer',
+          issueDescription: row['issue_description'] ?? '',
+          status: row['status'] ?? 'Pending',
+          requestedAt: requestedAt,
           messages: messages,
         ));
       }
@@ -98,20 +198,22 @@ class RequestProvider with ChangeNotifier {
   }
 
   Future<void> addRequest(ConsultationRequest request) async {
-    // Enforce correct citizenName from the database to prevent metadata mismatches
-    if (_currentRole == 'Citizen' && _currentUsername != null) {
-      request = ConsultationRequest(
-        id: request.id,
-        citizenName: _currentUsername!,
-        lawyerName: request.lawyerName,
-        issueDescription: request.issueDescription,
-        requestedAt: request.requestedAt,
-        status: request.status,
-        messages: request.messages,
-      );
-    }
+    // Enforce correct citizenName from current identity
+    final effectiveCitizenName = (_currentUsername != null && _currentUsername!.isNotEmpty)
+        ? _currentUsername!
+        : request.citizenName;
 
-    // Optimistic update to prevent double submissions instantly
+    request = ConsultationRequest(
+      id: request.id,
+      citizenName: effectiveCitizenName,
+      lawyerName: request.lawyerName,
+      issueDescription: request.issueDescription,
+      requestedAt: request.requestedAt,
+      status: request.status,
+      messages: request.messages,
+    );
+
+    // Optimistic update
     _requests.insert(0, request);
     notifyListeners();
 
@@ -135,7 +237,7 @@ class RequestProvider with ChangeNotifier {
         'action_payload': request.id,
       });
 
-      // Send notification to citizen (user)
+      // Send notification to citizen
       await _supabase.from('app_notifications').insert({
         'id': Uuid().v4(),
         'target_user': request.citizenName,
@@ -148,7 +250,6 @@ class RequestProvider with ChangeNotifier {
       await fetchRequests(); // Refresh list
     } catch (e) {
       debugPrint('Error adding request: $e');
-      // Revert optimistic update on failure
       _requests.removeWhere((r) => r.id == request.id);
       notifyListeners();
     }
@@ -158,22 +259,22 @@ class RequestProvider with ChangeNotifier {
     // Optimistic Update
     final index = _requests.indexWhere((r) => r.id == id);
     if (index != -1) {
-      _requests[index].status = 'Accepted';
+      _requests[index].status = 'Awaiting Confirmation';
       notifyListeners();
     }
 
     try {
       await _supabase
           .from('consultation_requests')
-          .update({'status': 'Accepted'})
+          .update({'status': 'Awaiting Confirmation'})
           .eq('id', id);
 
-      // Send notification
+      // Send notification to citizen
       await _supabase.from('app_notifications').insert({
         'id': Uuid().v4(),
         'target_user': citizenName,
-        'title': 'Request Accepted',
-        'message': 'Your lawyer has accepted your request. You can now start communicating through chat.',
+        'title': 'Lawyer Proceeded',
+        'message': 'Your lawyer has proceeded with your consultation request. Please confirm to begin consultations.',
         'is_read': false,
         'action_payload': id,
       });
@@ -188,22 +289,22 @@ class RequestProvider with ChangeNotifier {
     // Optimistic Update
     final index = _requests.indexWhere((r) => r.id == id);
     if (index != -1) {
-      _requests[index].status = 'Confirmed';
+      _requests[index].status = 'Accepted';
       notifyListeners();
     }
 
     try {
       await _supabase
           .from('consultation_requests')
-          .update({'status': 'Confirmed'})
+          .update({'status': 'Accepted'})
           .eq('id', id);
 
-      // Send notification
+      // Send notification to lawyer
       await _supabase.from('app_notifications').insert({
         'id': Uuid().v4(),
         'target_user': lawyerName,
         'title': 'User Confirmed',
-        'message': 'The user has confirmed the consultation. You can now chat with them.',
+        'message': 'The citizen has confirmed the consultation. You can now chat with them.',
         'is_read': false,
         'action_payload': id,
       });
@@ -215,7 +316,6 @@ class RequestProvider with ChangeNotifier {
   }
 
   Future<void> updateRequestStatus(String id, String newStatus) async {
-    // Optimistic Update
     final index = _requests.indexWhere((r) => r.id == id);
     if (index != -1) {
       _requests[index].status = newStatus;
@@ -227,7 +327,24 @@ class RequestProvider with ChangeNotifier {
           .from('consultation_requests')
           .update({'status': newStatus})
           .eq('id', id);
-      await fetchRequests(); // Refresh list
+
+      // Notify the other party about status change
+      if (index != -1) {
+        final req = _requests[index];
+        final targetUser = _currentRole == 'Lawyer' ? req.citizenName : req.lawyerName;
+        final senderName = _currentRole == 'Lawyer' ? req.lawyerName : req.citizenName;
+        
+        await _supabase.from('app_notifications').insert({
+          'id': Uuid().v4(),
+          'target_user': targetUser,
+          'title': 'Consultation Status Updated',
+          'message': '$senderName has updated the consultation status to "$newStatus".',
+          'is_read': false,
+          'action_payload': req.id,
+        });
+      }
+
+      await fetchRequests();
     } catch (e) {
       debugPrint('Error updating request status: $e');
     }
@@ -245,12 +362,11 @@ class RequestProvider with ChangeNotifier {
       await _supabase.from('chat_messages').insert({
         'request_id': id,
         'sender': message['sender'],
-        'text': EncryptionService.encryptText(message['text']),
+        'text': EncryptionService.encryptText(message['text'] ?? ''),
       });
       await fetchRequests(); // Refresh list to get accurate timestamps from DB
     } catch (e) {
       debugPrint('Error adding message: $e');
-      // Revert optimistic update on failure
       if (index != -1) {
         _requests[index].messages.removeLast();
         notifyListeners();

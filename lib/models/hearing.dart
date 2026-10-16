@@ -21,7 +21,7 @@ class Hearing {
     return Hearing(
       id: json['id'],
       caseId: json['case_id'],
-      hearingDate: DateTime.parse(json['hearing_date']),
+      hearingDate: DateTime.parse(json['hearing_date']).toLocal(),
       courtroom: json['courtroom'] ?? '',
       hearingType: json['hearing_type'] ?? '',
       status: json['status'],

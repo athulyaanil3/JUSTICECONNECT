@@ -7,6 +7,8 @@ import '../../../controllers/advocate_clerk_provider.dart';
 import '../chat/filing_chat_screen.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../shared/secure_evidence_viewer.dart';
+import 'advocate_clerk_messages_screen.dart';
+import 'advocate_clerk_notifications_screen.dart';
 
 class AdvocateClerkFilingsTab extends StatefulWidget {
   const AdvocateClerkFilingsTab({Key? key}) : super(key: key);
@@ -254,11 +256,44 @@ class _AdvocateClerkFilingsTabState extends State<AdvocateClerkFilingsTab> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<AdvocateClerkProvider>(
-      builder: (context, provider, child) {
-        if (provider.isLoading) {
-          return const Center(child: CircularProgressIndicator());
-        }
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F9FC),
+      appBar: AppBar(
+        title: Text(
+          'Case Filings & Scrutiny',
+          style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 20, color: const Color(0xFF0D256C)),
+        ),
+        backgroundColor: Colors.white,
+        foregroundColor: const Color(0xFF0D256C),
+        elevation: 0.5,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.chat_bubble_outline, color: Color(0xFF0D256C)),
+            tooltip: 'Lawyer Messages',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AdvocateClerkMessagesScreen()),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.notifications_none, color: Color(0xFF0D256C)),
+            tooltip: 'Notifications',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AdvocateClerkNotificationsScreen()),
+              );
+            },
+          ),
+        ],
+      ),
+      body: Consumer<AdvocateClerkProvider>(
+        builder: (context, provider, child) {
+          if (provider.isLoading) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
         // Show cases that are in the "Filing/Verification" lifecycle
         final cases = provider.cases.where((c) => 
@@ -275,28 +310,174 @@ class _AdvocateClerkFilingsTabState extends State<AdvocateClerkFilingsTab> {
 
         if (cases.isEmpty) {
           return Center(
-            child: Text('No pending case files found.', style: GoogleFonts.inter(color: Colors.grey)),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.folder_open_outlined, size: 54, color: Colors.grey.shade400),
+                const SizedBox(height: 12),
+                Text(
+                  'No pending case files found',
+                  style: GoogleFonts.outfit(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'All incoming case filings are up to date.',
+                  style: GoogleFonts.inter(fontSize: 13, color: Colors.grey.shade500),
+                ),
+              ],
+            ),
           );
         }
 
         return ListView.builder(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           itemCount: cases.length,
           itemBuilder: (context, index) {
             final c = cases[index];
-            return Card(
+            final statusColor = _getStatusColor(c.status);
+            final statusBg = _getStatusBgColor(c.status);
+            final dateStr = c.registeredAt.toString().length >= 10
+                ? c.registeredAt.toString().substring(0, 10)
+                : '';
+
+            return Container(
               margin: const EdgeInsets.only(bottom: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: ListTile(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.grey.shade200),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.02),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: InkWell(
                 onTap: () => _showFilingDetails(context, c),
-                title: Text(c.title, style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                subtitle: Text('Status: ${c.status} • ${c.registeredAt.toString().substring(0,10)}'),
-                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                borderRadius: BorderRadius.circular(16),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: statusBg,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              c.status,
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: statusColor,
+                              ),
+                            ),
+                          ),
+                          Row(
+                            children: [
+                              Icon(Icons.calendar_today_outlined, size: 13, color: Colors.grey.shade500),
+                              const SizedBox(width: 4),
+                              Text(
+                                dateStr,
+                                style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade600),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        c.title,
+                        style: GoogleFonts.outfit(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFF0D256C),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Case #${c.id.length > 8 ? c.id.substring(0, 8) : c.id}',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Row(
+                            children: [
+                              Text(
+                                'Check File',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF0D256C),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              const Icon(Icons.arrow_forward_ios, size: 12, color: Color(0xFF0D256C)),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               ),
             );
           },
         );
       },
-    );
+    ),
+  );
+}
+
+  Color _getStatusColor(String status) {
+    switch (status) {
+      case 'Verified':
+      case 'Approved for Filing':
+        return Colors.green.shade700;
+      case 'Correction Required':
+        return Colors.red.shade700;
+      case 'Under Verification':
+      case 'Documents Uploaded':
+      case 'Correction Submitted':
+        return Colors.orange.shade800;
+      case 'Ready for Lawyer Review':
+        return Colors.indigo.shade700;
+      default:
+        return Colors.blue.shade700;
+    }
+  }
+
+  Color _getStatusBgColor(String status) {
+    switch (status) {
+      case 'Verified':
+      case 'Approved for Filing':
+        return Colors.green.shade50;
+      case 'Correction Required':
+        return Colors.red.shade50;
+      case 'Under Verification':
+      case 'Documents Uploaded':
+      case 'Correction Submitted':
+        return Colors.orange.shade50;
+      case 'Ready for Lawyer Review':
+        return Colors.indigo.shade50;
+      default:
+        return Colors.blue.shade50;
+    }
   }
 }
