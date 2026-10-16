@@ -2,17 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:intl/intl.dart';
 
 import '../../../controllers/request_provider.dart';
 import '../../../models/consultation_request.dart';
 import '../../../models/legal_case.dart';
 import '../../../models/case_update.dart';
 import '../../chat/chat_screen.dart';
-import '../../widgets/causelist_card.dart';
-import 'dart:io';
-import 'package:file_picker/file_picker.dart';
-import '../../../services/evidence_encryption_service.dart';
-import 'package:uuid/uuid.dart';
+import '../../../services/lawyer_rating_service.dart';
 
 class CaseTrackingTab extends StatefulWidget {
   const CaseTrackingTab({Key? key}) : super(key: key);
@@ -43,7 +40,19 @@ class _CaseTrackingTabState extends State<CaseTrackingTab> {
 
   Future<List<CaseUpdate>> _fetchUpdates(String caseId) async {
     final res = await _supabase.from('case_updates').select().eq('case_id', caseId).order('created_at', ascending: true);
-    return res.map((u) => CaseUpdate.fromJson(u)).toList();
+    final allUpdates = res.map((u) => CaseUpdate.fromJson(u)).toList();
+    // Filter out internal advocate clerk assignment updates for the citizen user in View Timeline
+    return allUpdates.where((u) {
+      final typeLower = u.updateType.toLowerCase().trim();
+      final descLower = u.description.toLowerCase().trim();
+      final isClerkAssigned = typeLower.contains('advocate clerk assigned') ||
+          typeLower.contains('clerk assigned') ||
+          (typeLower.contains('clerk') && typeLower.contains('assign')) ||
+          descLower.contains('assigned their advocate clerk') ||
+          descLower.contains('advocate clerk assigned') ||
+          descLower.contains('clerk assigned');
+      return !isClerkAssigned;
+    }).toList();
   }
 
   @override
@@ -51,19 +60,22 @@ class _CaseTrackingTabState extends State<CaseTrackingTab> {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
-        backgroundColor: Theme.of(context).colorScheme.background,
+        backgroundColor: const Color(0xFFF7F9FC),
         appBar: AppBar(
           title: Text(
             'My Legal Matters',
-            style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+            style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 20, color: const Color(0xFF0D256C)),
           ),
           backgroundColor: Colors.white,
-          foregroundColor: Theme.of(context).primaryColor,
-          elevation: 0,
+          foregroundColor: const Color(0xFF0D256C),
+          elevation: 0.5,
           bottom: TabBar(
-            labelColor: Theme.of(context).primaryColor,
-            unselectedLabelColor: Colors.grey,
-            indicatorColor: Theme.of(context).primaryColor,
+            labelColor: const Color(0xFF0D256C),
+            unselectedLabelColor: Colors.grey.shade600,
+            indicatorColor: const Color(0xFF0D256C),
+            indicatorWeight: 3,
+            labelStyle: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 14),
+            unselectedLabelStyle: GoogleFonts.inter(fontWeight: FontWeight.normal, fontSize: 14),
             tabs: const [
               Tab(text: 'Consultations'),
               Tab(text: 'Court Cases'),
@@ -228,7 +240,7 @@ class _CaseTrackingTabState extends State<CaseTrackingTab> {
                   return ListTile(
                     leading: const Icon(Icons.history, color: Colors.blue),
                     title: Text(u.updateType, style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14)),
-                    subtitle: Text('${u.description}\n${u.createdAt.toString().substring(0, 16)}', style: GoogleFonts.inter(fontSize: 12)),
+                    subtitle: Text('${u.description}\n${DateFormat('dd MMM yyyy, hh:mm a').format(u.createdAt.toLocal())}', style: GoogleFonts.inter(fontSize: 12)),
                     isThreeLine: true,
                   );
                 },
@@ -296,65 +308,18 @@ class _CaseTrackingTabState extends State<CaseTrackingTab> {
                       if (user == null) return;
                       
                       String? actualLawyerId = c.lawyerId.isNotEmpty ? c.lawyerId : null;
-                      
-                      String? officeId;
-                      // Check if lawyer belongs to an office
-                      if (actualLawyerId != null) {
-                        final lawyerData = await Supabase.instance.client.from('profiles').select('office_id').eq('id', actualLawyerId).maybeSingle();
-                        officeId = lawyerData?['office_id'];
+                      if (actualLawyerId == null) {
+                        Navigator.pop(ctx);
+                        return;
                       }
 
-                      // Insert review
-                      await Supabase.instance.client.from('reviews').insert({
-                        'case_id': c.id,
-                        'citizen_id': user.id,
-                        if (actualLawyerId != null) 'lawyer_id': actualLawyerId,
-                        if (officeId != null) 'office_id': officeId,
-                        'rating': rating,
-                        'review_text': textController.text.trim(),
-                      });
-
-                      // Update Lawyer Profile Rating
-                      if (actualLawyerId != null) {
-                        final reviewsRes = await Supabase.instance.client
-                            .from('reviews')
-                            .select('rating')
-                            .eq('lawyer_id', actualLawyerId);
-                        
-                        double totalRating = 0.0;
-                        for (var row in reviewsRes) {
-                          totalRating += (row['rating'] as num).toDouble();
-                        }
-                        
-                        double newRating = reviewsRes.isNotEmpty ? totalRating / reviewsRes.length : 0.0;
-                        int newCount = reviewsRes.length;
-
-                        await Supabase.instance.client.from('profiles').update({
-                          'rating': newRating,
-                          'rating_count': newCount
-                        }).eq('id', actualLawyerId);
-                      }
-
-                      // Update Office Rating if applicable
-                      if (officeId != null) {
-                        final officeReviewsRes = await Supabase.instance.client
-                            .from('reviews')
-                            .select('rating')
-                            .eq('office_id', officeId);
-                        
-                        double totalOfficeRating = 0.0;
-                        for (var row in officeReviewsRes) {
-                          totalOfficeRating += (row['rating'] as num).toDouble();
-                        }
-                        
-                        double newOfficeRating = officeReviewsRes.isNotEmpty ? totalOfficeRating / officeReviewsRes.length : 0.0;
-                        int newOfficeCount = officeReviewsRes.length;
-
-                        await Supabase.instance.client.from('lawyer_offices').update({
-                          'rating': newOfficeRating,
-                          'rating_count': newOfficeCount
-                        }).eq('id', officeId);
-                      }
+                      await LawyerRatingService.submitRating(
+                        lawyerId: actualLawyerId,
+                        citizenId: user.id,
+                        rating: rating,
+                        reviewText: textController.text.trim(),
+                        caseId: c.id,
+                      );
 
                       Navigator.pop(ctx);
                       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Review submitted successfully!')));
@@ -481,14 +446,17 @@ class _CaseTrackingTabState extends State<CaseTrackingTab> {
 
   Widget _buildInfoRow(IconData icon, String text) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(icon, size: 16, color: Colors.grey[600]),
         const SizedBox(width: 8),
-        Text(
-          text,
-          style: GoogleFonts.inter(
-            color: Colors.grey[700],
-            fontSize: 14,
+        Expanded(
+          child: Text(
+            text,
+            style: GoogleFonts.inter(
+              color: Colors.grey[700],
+              fontSize: 14,
+            ),
           ),
         ),
       ],
@@ -518,24 +486,26 @@ class _CaseTrackingTabState extends State<CaseTrackingTab> {
           ],
         ),
         const SizedBox(width: 12),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: GoogleFonts.inter(
-                fontWeight: isCompleted ? FontWeight.w600 : FontWeight.normal,
-                color: isCompleted ? Colors.black87 : Colors.grey[500],
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: GoogleFonts.inter(
+                  fontWeight: isCompleted ? FontWeight.w600 : FontWeight.normal,
+                  color: isCompleted ? Colors.black87 : Colors.grey[500],
+                ),
               ),
-            ),
-            Text(
-              date,
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                color: Colors.grey[500],
+              Text(
+                date,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: Colors.grey[500],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ],
     );

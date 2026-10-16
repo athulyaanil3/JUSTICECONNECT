@@ -31,7 +31,11 @@ class _CitizenDashboardState extends State<CitizenDashboard> {
       Provider.of<RequestProvider>(context, listen: false).fetchRequests();
       final user = Supabase.instance.client.auth.currentUser;
       final username = user?.userMetadata?['username'] ?? 'Citizen';
-      Provider.of<NotificationProvider>(context, listen: false).fetchNotifications(username);
+      Provider.of<NotificationProvider>(context, listen: false).fetchNotifications(
+        username,
+        userId: user?.id,
+        email: user?.email,
+      );
     });
   }
 
@@ -82,11 +86,12 @@ class _CitizenDashboardState extends State<CitizenDashboard> {
         body: _tabs[_currentIndex],
         bottomNavigationBar: Container(
           decoration: BoxDecoration(
+            color: Colors.white,
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 10,
-                offset: const Offset(0, -5),
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 16,
+                offset: const Offset(0, -4),
               ),
             ],
           ),
@@ -99,10 +104,11 @@ class _CitizenDashboardState extends State<CitizenDashboard> {
             },
             type: BottomNavigationBarType.fixed,
             backgroundColor: Colors.white,
-            selectedItemColor: Theme.of(context).primaryColor,
-            unselectedItemColor: Colors.grey,
-            selectedLabelStyle: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 12),
-            unselectedLabelStyle: GoogleFonts.inter(fontWeight: FontWeight.normal, fontSize: 12),
+            elevation: 0,
+            selectedItemColor: const Color(0xFF0D256C),
+            unselectedItemColor: Colors.grey.shade400,
+            selectedLabelStyle: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 11),
+            unselectedLabelStyle: GoogleFonts.inter(fontWeight: FontWeight.normal, fontSize: 11),
             items: const [
               BottomNavigationBarItem(
                 icon: Icon(Icons.dashboard_outlined),

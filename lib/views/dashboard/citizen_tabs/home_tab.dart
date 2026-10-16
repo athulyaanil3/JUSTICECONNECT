@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../controllers/notification_provider.dart';
 import '../../../controllers/request_provider.dart';
+import '../../widgets/dashboard_header.dart';
 import 'notifications_screen.dart';
 import 'profile_screen.dart';
 
@@ -215,7 +216,10 @@ class HomeTab extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  Row(
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -232,15 +236,19 @@ class HomeTab extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Icon(Icons.calendar_today, size: 14, color: Colors.grey[500]),
-                      const SizedBox(width: 4),
-                      Text(
-                        date.replaceAll('Requested on: ', ''),
-                        style: GoogleFonts.inter(
-                          color: Colors.grey[600],
-                          fontSize: 13,
-                        ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.calendar_today, size: 14, color: Colors.grey[500]),
+                          const SizedBox(width: 4),
+                          Text(
+                            date.replaceAll('Requested on: ', ''),
+                            style: GoogleFonts.inter(
+                              color: Colors.grey[600],
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -256,96 +264,16 @@ class HomeTab extends StatelessWidget {
 
 
   Widget _buildDashboardHeader(BuildContext context, String username, NotificationProvider notifProvider) {
-    final hasUnread = notifProvider.unreadCount > 0;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.only(top: 60, left: 24, right: 24, bottom: 32),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF0D256C), Color(0xFF1A3B99)],
-        ),
-        borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(32),
-          bottomRight: Radius.circular(32),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  'Welcome back,\n$username!',
-                  style: GoogleFonts.outfit(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    height: 1.2,
-                  ),
-                ),
-              ),
-              Row(
-                children: [
-                  Stack(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.notifications_outlined, color: Colors.white, size: 28),
-                        onPressed: () {
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationsScreen()));
-                        },
-                      ),
-                      if (hasUnread)
-                        Positioned(
-                          right: 12,
-                          top: 12,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: Colors.redAccent,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Text(
-                              '${notifProvider.unreadCount}',
-                              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileScreen()));
-                    },
-                    child: Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white.withOpacity(0.5), width: 2),
-                      ),
-                      child: CircleAvatar(
-                        backgroundColor: Colors.white.withOpacity(0.2),
-                        child: const Icon(Icons.person, color: Colors.white),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Here is your personalized legal overview.',
-            style: GoogleFonts.inter(
-              fontSize: 15,
-              color: Colors.white.withOpacity(0.8),
-            ),
-          ),
-        ],
-      ),
+    return DashboardHeader(
+      title: 'Welcome back,\n$username!',
+      subtitle: 'Here is your personalized legal overview.',
+      unreadNotifications: notifProvider.unreadCount,
+      onNotificationTap: () {
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationsScreen()));
+      },
+      onProfileTap: () {
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileScreen()));
+      },
     );
   }
 }
