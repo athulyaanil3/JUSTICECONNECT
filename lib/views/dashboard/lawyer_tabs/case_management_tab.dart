@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../../../controllers/lawyer_provider.dart';
 import '../../../models/legal_case.dart';
-import '../chat/filing_chat_screen.dart';
 import '../../shared/secure_evidence_viewer.dart';
 
 class CaseManagementTab extends StatefulWidget {
@@ -52,7 +52,9 @@ class _CaseManagementTabState extends State<CaseManagementTab> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  TextField(controller: caseNumberController, decoration: const InputDecoration(labelText: 'Case Number', hintText: 'e.g. WP(C) 123/2026')),
+                  TextField(controller: titleController, decoration: const InputDecoration(labelText: 'Case Title', hintText: 'e.g. State of Kerala vs John Doe')),
+                  const SizedBox(height: 12),
+                  TextField(controller: caseNumberController, decoration: const InputDecoration(labelText: 'Case Number *', hintText: 'e.g. WP(C) 123/2026')),
                   const SizedBox(height: 12),
                   Autocomplete<String>(
                     optionsBuilder: (TextEditingValue textEditingValue) {
@@ -83,7 +85,7 @@ class _CaseManagementTabState extends State<CaseManagementTab> {
                   TextField(controller: respondentController, decoration: const InputDecoration(labelText: 'Respondent Name')),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: Text(selectedDate == null ? 'Select Next Hearing Date' : 'Next Hearing: ${selectedDate!.toString().substring(0, 10)}'),
+                    title: Text(selectedDate == null ? 'Select Next Hearing Date *' : 'Next Hearing: ${selectedDate!.toString().substring(0, 10)}'),
                     trailing: const Icon(Icons.calendar_today),
                     onTap: () async {
                       final date = await showDatePicker(
@@ -102,21 +104,36 @@ class _CaseManagementTabState extends State<CaseManagementTab> {
               TextButton(onPressed: isSubmitting ? null : () => Navigator.pop(ctx), child: const Text('Cancel')),
               ElevatedButton(
                 onPressed: isSubmitting ? null : () async {
-                  if (caseNumberController.text.isNotEmpty && selectedDate != null) {
+                  if (caseNumberController.text.trim().isNotEmpty && selectedDate != null) {
                     setState(() => isSubmitting = true);
-                    await Provider.of<LawyerProvider>(context, listen: false).addOfficialCase(
-                      caseNumberController.text, // Title
-                      categoryController.text.isNotEmpty ? categoryController.text : 'General', // Category
-                      'Officially imported case', // Description
-                      clientController.text.trim(), // Client ID (Username)
-                      caseNumberController.text,
-                      courtNameController.text,
-                      petitionerController.text,
-                      respondentController.text,
+                    final caseTitle = titleController.text.trim().isNotEmpty 
+                        ? titleController.text.trim() 
+                        : caseNumberController.text.trim();
+                    final error = await Provider.of<LawyerProvider>(context, listen: false).addOfficialCase(
+                      caseTitle,
+                      categoryController.text.isNotEmpty ? categoryController.text : 'General',
+                      descController.text.isNotEmpty ? descController.text : 'Officially imported case',
+                      clientController.text.trim(),
+                      caseNumberController.text.trim(),
+                      courtNameController.text.trim(),
+                      petitionerController.text.trim(),
+                      respondentController.text.trim(),
                       selectedDate!,
-                      'Next Hearing', // Purpose
+                      purposeController.text.isNotEmpty ? purposeController.text.trim() : 'Next Hearing',
                     );
-                    if (context.mounted) Navigator.pop(ctx);
+                    if (context.mounted) {
+                      if (error == null) {
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Case added successfully!'), backgroundColor: Colors.green),
+                        );
+                      } else {
+                        setState(() => isSubmitting = false);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(error), backgroundColor: Colors.red),
+                        );
+                      }
+                    }
                   } else {
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Case Number and Hearing Date are required.')));
                   }
@@ -154,7 +171,7 @@ class _CaseManagementTabState extends State<CaseManagementTab> {
                   return ListTile(
                     leading: const Icon(Icons.history, color: Colors.blue),
                     title: Text(u.updateType, style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14)),
-                    subtitle: Text('${u.description}\n${u.createdAt.toString().substring(0, 16)}', style: GoogleFonts.inter(fontSize: 12)),
+                    subtitle: Text('${u.description}\n${DateFormat('dd MMM yyyy, hh:mm a').format(u.createdAt.toLocal())}', style: GoogleFonts.inter(fontSize: 12)),
                     isThreeLine: true,
                   );
                 },
@@ -214,21 +231,21 @@ class _CaseManagementTabState extends State<CaseManagementTab> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.background,
+      backgroundColor: const Color(0xFFF7F9FC),
       appBar: AppBar(
         title: Text(
           'Case Management',
-          style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+          style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 20, color: const Color(0xFF0D256C)),
         ),
         backgroundColor: Colors.white,
-        foregroundColor: Theme.of(context).primaryColor,
-        elevation: 0,
+        foregroundColor: const Color(0xFF0D256C),
+        elevation: 0.5,
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showAddNewCaseDialog(context),
         icon: const Icon(Icons.add),
         label: const Text('Add Case'),
-        backgroundColor: Theme.of(context).primaryColor,
+        backgroundColor: const Color(0xFF0D256C),
         foregroundColor: Colors.white,
       ),
       body: Consumer<LawyerProvider>(
@@ -240,16 +257,42 @@ class _CaseManagementTabState extends State<CaseManagementTab> {
           final cases = provider.myCases;
 
           if (cases.isEmpty) {
-            return Center(child: Text('No cases submitted yet.', style: GoogleFonts.inter(color: Colors.grey)));
+            return RefreshIndicator(
+              onRefresh: () => provider.fetchMyCases(),
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: [
+                  SizedBox(
+                    height: MediaQuery.of(context).size.height * 0.6,
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.folder_open_outlined, size: 64, color: Colors.grey.shade400),
+                          const SizedBox(height: 12),
+                          Text('No cases submitted yet.', style: GoogleFonts.inter(color: Colors.grey.shade600, fontSize: 16)),
+                          const SizedBox(height: 8),
+                          Text('Tap "+ Add Case" below or pull down to refresh', style: GoogleFonts.inter(color: Colors.grey.shade400, fontSize: 13)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
           }
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(20),
-            itemCount: cases.length,
-            itemBuilder: (context, index) {
-              final c = cases[index];
-              return _buildLawyerCaseCard(context, c);
-            },
+          return RefreshIndicator(
+            onRefresh: () => provider.fetchMyCases(),
+            child: ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(20),
+              itemCount: cases.length,
+              itemBuilder: (context, index) {
+                final c = cases[index];
+                return _buildLawyerCaseCard(context, c);
+              },
+            ),
           );
         },
       ),
@@ -263,11 +306,15 @@ class _CaseManagementTabState extends State<CaseManagementTab> {
     if (!context.mounted) return;
 
     if (clerks.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No Advocate Clerks available')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No Advocate Clerks associated with your practice.')),
+      );
       return;
     }
 
-    String? selectedClerkId;
+    String? selectedClerkId = (c.advocateClerkId.isNotEmpty && clerks.any((k) => k['id'] == c.advocateClerkId))
+        ? c.advocateClerkId
+        : null;
 
     showDialog(
       context: context,
@@ -276,7 +323,7 @@ class _CaseManagementTabState extends State<CaseManagementTab> {
           return AlertDialog(
             title: const Text('Assign Advocate Clerk'),
             content: DropdownButtonFormField<String>(
-              value: selectedClerkId,
+              initialValue: selectedClerkId,
               hint: const Text('Select a Clerk'),
               items: clerks.map((clerk) => DropdownMenuItem(
                 value: clerk['id'] as String,
@@ -434,7 +481,13 @@ class _CaseManagementTabState extends State<CaseManagementTab> {
               children: [
                 Icon(Icons.gavel, size: 16, color: Colors.grey[600]),
                 const SizedBox(width: 8),
-                Text(c.caseNumber.isNotEmpty ? c.caseNumber : 'Unassigned', style: GoogleFonts.inter(color: Colors.grey[700])),
+                Expanded(
+                  child: Text(
+                    c.caseNumber.isNotEmpty ? c.caseNumber : 'Unassigned',
+                    style: GoogleFonts.inter(color: Colors.grey[700]),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
             ),
             if (c.advocateClerkId.isNotEmpty) ...[

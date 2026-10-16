@@ -12,6 +12,7 @@ import '../../chat/chat_screen.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../shared/document_viewer_screen.dart';
 
 class ClientManagementTab extends StatefulWidget {
   const ClientManagementTab({Key? key}) : super(key: key);
@@ -157,64 +158,169 @@ class _ClientManagementTabState extends State<ClientManagementTab> {
     );
   }
 
+  void _viewClerkDocument(BuildContext context, String? docName, String clerkName) async {
+    if (docName == null || docName.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No document uploaded by this clerk.')),
+      );
+      return;
+    }
+
+    try {
+      final url = Supabase.instance.client.storage.from('documents').getPublicUrl(docName);
+      final ext = docName.split('.').last.toLowerCase();
+      final isPdf = ext == 'pdf';
+      final isImage = ext == 'jpg' || ext == 'jpeg' || ext == 'png';
+
+      if (isPdf || isImage) {
+        if (!context.mounted) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => FullScreenDocumentViewer(
+              url: url,
+              isPdf: isPdf,
+              title: '$clerkName - Verification Document',
+            ),
+          ),
+        );
+      } else {
+        final uri = Uri.parse(url);
+        bool launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+        if (!launched) {
+          launched = await launchUrl(uri, mode: LaunchMode.platformDefault);
+        }
+        if (!launched && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not open file in external application.')),
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error viewing document: $e')),
+        );
+      }
+    }
+  }
+
+  Widget _buildClerkInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              '$label:',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: Colors.grey[700], fontSize: 13),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: GoogleFonts.inter(fontWeight: FontWeight.w500, color: Colors.black87, fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showClerkReviewDialog(BuildContext context, Map<String, dynamic> clerk) {
     showDialog(
       context: context,
       builder: (ctx) {
         final docName = clerk['verification_document'];
+        String displayName = 'No document uploaded';
+        if (docName != null && docName.toString().isNotEmpty) {
+          final parts = docName.toString().split('_');
+          if (parts.length > 3) {
+            displayName = parts.sublist(3).join('_');
+          } else if (parts.length > 2) {
+            displayName = parts.sublist(2).join('_');
+          } else {
+            displayName = docName.toString();
+          }
+        }
+        final ext = (docName != null) ? docName.toString().split('.').last.toLowerCase() : '';
+        final isPdf = ext == 'pdf';
+        final isImage = ext == 'jpg' || ext == 'jpeg' || ext == 'png';
+
         return AlertDialog(
-          title: Text('Review Clerk Request', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              const Icon(Icons.verified_user, color: Colors.blue, size: 24),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text('Review Clerk Request', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 18)),
+              ),
+            ],
+          ),
           content: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('Name: ${clerk['username'] ?? 'Unknown'}', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                _buildClerkInfoRow('Name', clerk['username'] ?? 'Unknown'),
+                _buildClerkInfoRow('Email', clerk['email'] ?? 'N/A'),
+                _buildClerkInfoRow('Court ID', clerk['court_id'] ?? 'N/A'),
+                _buildClerkInfoRow('District', clerk['court_district'] ?? 'N/A'),
+                const SizedBox(height: 12),
+                Text('Uploaded Verification Document', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14)),
                 const SizedBox(height: 8),
-                Text('Email: ${clerk['email'] ?? 'N/A'}'),
-                const SizedBox(height: 8),
-                Text('Court ID: ${clerk['court_id'] ?? 'N/A'}'),
-                const SizedBox(height: 8),
-                Text('District: ${clerk['court_district'] ?? 'N/A'}'),
-                const SizedBox(height: 16),
-                Text('Uploaded Document', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.blue.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.picture_as_pdf, color: Colors.red),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          docName ?? 'No document uploaded',
-                          style: GoogleFonts.inter(color: Colors.blue[700], decoration: TextDecoration.underline),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                InkWell(
+                  onTap: docName != null ? () => _viewClerkDocument(context, docName, clerk['username'] ?? 'Clerk') : null,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: docName != null ? Colors.blue.withOpacity(0.08) : Colors.grey.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: docName != null ? Colors.blue.withOpacity(0.3) : Colors.grey.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          isPdf ? Icons.picture_as_pdf : (isImage ? Icons.image : Icons.description),
+                          color: docName != null ? (isPdf ? Colors.red : (isImage ? Colors.blue : Colors.orange)) : Colors.grey,
+                          size: 28,
                         ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.download),
-                        onPressed: () async {
-                          if (docName != null) {
-                            final url = Supabase.instance.client.storage.from('documents').getPublicUrl(docName);
-                            final uri = Uri.parse(url);
-                            if (await canLaunchUrl(uri)) {
-                              await launchUrl(uri, mode: LaunchMode.externalApplication);
-                            } else {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not launch URL')));
-                            }
-                          } else {
-                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No document uploaded')));
-                          }
-                        },
-                      ),
-                    ],
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                displayName,
+                                style: GoogleFonts.inter(
+                                  color: docName != null ? Colors.blue[800] : Colors.grey,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                  decoration: docName != null ? TextDecoration.underline : TextDecoration.none,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if (docName != null)
+                                Text(
+                                  'Tap or click eye to view document',
+                                  style: GoogleFonts.inter(color: Colors.grey[600], fontSize: 11),
+                                ),
+                            ],
+                          ),
+                        ),
+                        if (docName != null)
+                          IconButton(
+                            icon: const Icon(Icons.visibility, color: Colors.blue),
+                            tooltip: 'View Document',
+                            onPressed: () => _viewClerkDocument(context, docName, clerk['username'] ?? 'Clerk'),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -250,7 +356,7 @@ class _ClientManagementTabState extends State<ClientManagementTab> {
                   debugPrint('Error approving clerk: $e');
                 }
               },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
               child: const Text('Approve'),
             ),
           ],
@@ -262,15 +368,15 @@ class _ClientManagementTabState extends State<ClientManagementTab> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.background,
+      backgroundColor: const Color(0xFFF7F9FC),
       appBar: AppBar(
         title: Text(
-          'Clients',
-          style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+          'Clients & Consultations',
+          style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 20, color: const Color(0xFF0D256C)),
         ),
         backgroundColor: Colors.white,
-        foregroundColor: Theme.of(context).primaryColor,
-        elevation: 0,
+        foregroundColor: const Color(0xFF0D256C),
+        elevation: 0.5,
       ),
       body: ListView(
         padding: const EdgeInsets.all(20),
@@ -353,36 +459,51 @@ class _ClientManagementTabState extends State<ClientManagementTab> {
                 leading: CircleAvatar(backgroundColor: Colors.blue[100], child: const Icon(Icons.person, color: Colors.blue)),
                 title: Text(clerk['username'] ?? 'Unknown', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
                 subtitle: Text('Active Clerk • District: ${clerk['court_district']}'),
-                trailing: IconButton(
-                  icon: const Icon(Icons.person_remove, color: Colors.red),
-                  tooltip: 'Remove Clerk',
-                  onPressed: () async {
-                    final confirm = await showDialog<bool>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('Remove Clerk?'),
-                        content: Text('Are you sure you want to remove ${clerk['username']} from your office?'),
-                        actions: [
-                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-                            onPressed: () => Navigator.pop(ctx, true),
-                            child: const Text('Remove'),
-                          )
-                        ],
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (clerk['verification_document'] != null)
+                      IconButton(
+                        icon: const Icon(Icons.description_outlined, color: Colors.blue),
+                        tooltip: 'View Verification Document',
+                        onPressed: () => _viewClerkDocument(
+                          context,
+                          clerk['verification_document'],
+                          clerk['username'] ?? 'Clerk',
+                        ),
                       ),
-                    );
+                    IconButton(
+                      icon: const Icon(Icons.person_remove, color: Colors.red),
+                      tooltip: 'Remove Clerk',
+                      onPressed: () async {
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('Remove Clerk?'),
+                            content: Text('Are you sure you want to remove ${clerk['username']} from your office?'),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+                                onPressed: () => Navigator.pop(ctx, true),
+                                child: const Text('Remove'),
+                              )
+                            ],
+                          ),
+                        );
 
-                    if (confirm == true) {
-                      try {
-                        await _supabase.from('profiles').update({'is_verified': false, 'associated_lawyer_id': null}).eq('id', clerk['id']);
-                        _fetchClerks();
-                        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Clerk removed successfully.')));
-                      } catch (e) {
-                        debugPrint('Error removing clerk: $e');
-                      }
-                    }
-                  },
+                        if (confirm == true) {
+                          try {
+                            await _supabase.from('profiles').update({'is_verified': false, 'associated_lawyer_id': null}).eq('id', clerk['id']);
+                            _fetchClerks();
+                            if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Clerk removed successfully.')));
+                          } catch (e) {
+                            debugPrint('Error removing clerk: $e');
+                          }
+                        }
+                      },
+                    ),
+                  ],
                 ),
               ),
             )).toList(),
@@ -469,38 +590,74 @@ class _ClientManagementTabState extends State<ClientManagementTab> {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
-          child: Icon(Icons.person, color: Theme.of(context).primaryColor),
-        ),
-        title: Text(request.citizenName, style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-        subtitle: Text('Issue: ${request.issueDescription}', style: GoogleFonts.inter(color: Colors.grey[600], fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            IconButton(
-              icon: const Icon(Icons.chat, color: Colors.blue), 
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => ChatScreen(
-                      requestId: request.id,
-                      otherPersonName: request.citizenName,
-                      isLawyer: true, // Lawyer
-                    ),
+            Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
+                  child: Icon(Icons.person, color: Theme.of(context).primaryColor),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        request.citizenName,
+                        style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 15),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Issue: ' + request.issueDescription,
+                        style: GoogleFonts.inter(color: Colors.grey[600], fontSize: 13),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ),
-                );
-              },
+                ),
+              ],
             ),
-            ElevatedButton(
-              onPressed: () => _showTakeCaseDialog(context, request),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.secondary,
-                foregroundColor: Colors.black,
-              ),
-              child: const Text('Take Case'),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.chat, size: 16),
+                  label: const Text('Chat'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Theme.of(context).primaryColor,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ChatScreen(
+                          requestId: request.id,
+                          otherPersonName: request.citizenName,
+                          isLawyer: true,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: () => _showTakeCaseDialog(context, request),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.secondary,
+                    foregroundColor: Colors.black,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  child: const Text('Take Case'),
+                ),
+              ],
             ),
           ],
         ),

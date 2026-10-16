@@ -4,14 +4,27 @@ import 'package:provider/provider.dart';
 import '../../../controllers/lawyer_provider.dart';
 import '../../../controllers/request_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:intl/intl.dart';
 import '../../../controllers/notification_provider.dart';
 import '../notifications_screen.dart';
 import '../../widgets/causelist_card.dart';
+import '../shared/causelist_tab.dart';
+import '../../widgets/dashboard_header.dart';
 
 class LawyerHomeTab extends StatefulWidget {
   final VoidCallback? onNavigateToClients;
-  const LawyerHomeTab({Key? key, this.onNavigateToClients}) : super(key: key);
+  final VoidCallback? onNavigateToCases;
+  final VoidCallback? onNavigateToHearings;
+  final VoidCallback? onNavigateToAppointments;
+  final VoidCallback? onNavigateToProfile;
+
+  const LawyerHomeTab({
+    Key? key,
+    this.onNavigateToClients,
+    this.onNavigateToCases,
+    this.onNavigateToHearings,
+    this.onNavigateToAppointments,
+    this.onNavigateToProfile,
+  }) : super(key: key);
 
   @override
   _LawyerHomeTabState createState() => _LawyerHomeTabState();
@@ -93,11 +106,10 @@ class _LawyerHomeTabState extends State<LawyerHomeTab> {
 
         final todayCases = lawyerProvider.myCases.where((c) {
           if (c.nextHearingDate == null) return false;
+          final localHearing = c.nextHearingDate!.toLocal();
           final now = DateTime.now();
-          return c.nextHearingDate!.year == now.year && c.nextHearingDate!.month == now.month && c.nextHearingDate!.day == now.day;
+          return localHearing.year == now.year && localHearing.month == now.month && localHearing.day == now.day;
         }).toList();
-        final todayAppointments = appointments.where((a) => a.requestedAt.day == DateTime.now().day).toList();
-
         return Scaffold(
           backgroundColor: const Color(0xFFF8F9FA),
           body: SingleChildScrollView(
@@ -137,9 +149,13 @@ class _LawyerHomeTabState extends State<LawyerHomeTab> {
                             const Color(0xFFE3F2FD),
                             const Color(0xFF1976D2),
                             onTap: () {
-                              _showDetailsBottomSheet(context, 'Total Clients', [
-                                const ListTile(title: Text('Unique clients based on active & closed cases.'))
-                              ]);
+                              if (widget.onNavigateToClients != null) {
+                                widget.onNavigateToClients!();
+                              } else {
+                                _showDetailsBottomSheet(context, 'Total Clients', [
+                                  const ListTile(title: Text('Unique clients based on active & closed cases.'))
+                                ]);
+                              }
                             }
                           ),
                           _buildStatCard(
@@ -150,13 +166,17 @@ class _LawyerHomeTabState extends State<LawyerHomeTab> {
                             const Color(0xFFFFF3E0),
                             const Color(0xFFF57C00),
                             onTap: () {
-                              _showDetailsBottomSheet(context, 'Active Cases', 
-                                activeCases.map((c) => ListTile(
-                                  leading: const Icon(Icons.gavel),
-                                  title: Text(c.title),
-                                  subtitle: Text(c.status),
-                                )).toList()
-                              );
+                              if (widget.onNavigateToCases != null) {
+                                widget.onNavigateToCases!();
+                              } else {
+                                _showDetailsBottomSheet(context, 'Active Cases', 
+                                  activeCases.map((c) => ListTile(
+                                    leading: const Icon(Icons.gavel),
+                                    title: Text(c.title),
+                                    subtitle: Text(c.status),
+                                  )).toList()
+                                );
+                              }
                             }
                           ),
                           _buildStatCard(
@@ -167,13 +187,17 @@ class _LawyerHomeTabState extends State<LawyerHomeTab> {
                             const Color(0xFFE8F5E9),
                             const Color(0xFF388E3C),
                             onTap: () {
-                               _showDetailsBottomSheet(context, 'Appointments', 
-                                appointments.map((a) => ListTile(
-                                  leading: const Icon(Icons.schedule),
-                                  title: Text(a.citizenName),
-                                  subtitle: Text(a.status),
-                                )).toList()
-                              );
+                              if (widget.onNavigateToAppointments != null) {
+                                widget.onNavigateToAppointments!();
+                              } else {
+                                _showDetailsBottomSheet(context, 'Appointments', 
+                                  appointments.map((a) => ListTile(
+                                    leading: const Icon(Icons.schedule),
+                                    title: Text(a.citizenName),
+                                    subtitle: Text(a.status),
+                                  )).toList()
+                                );
+                              }
                             }
                           ),
                           _buildStatCard(
@@ -216,12 +240,46 @@ class _LawyerHomeTabState extends State<LawyerHomeTab> {
                               color: const Color(0xFF1A1A1A),
                             ),
                           ),
-                          Text(
-                            'View All',
-                            style: GoogleFonts.inter(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Theme.of(context).primaryColor,
+                          InkWell(
+                            onTap: () {
+                              if (widget.onNavigateToHearings != null) {
+                                widget.onNavigateToHearings!();
+                              } else {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => Scaffold(
+                                      appBar: AppBar(
+                                        title: Text('Hearings Schedule', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+                                      ),
+                                      body: const CauselistTab(role: 'Lawyer'),
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
+                            borderRadius: BorderRadius.circular(8),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'View All',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: Theme.of(context).primaryColor,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Icon(
+                                    Icons.arrow_forward_ios,
+                                    size: 12,
+                                    color: Theme.of(context).primaryColor,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ],
@@ -250,51 +308,6 @@ class _LawyerHomeTabState extends State<LawyerHomeTab> {
                         )
                       else
                         ...todayCases.map((c) => CauselistCard(legalCase: c)).toList(),
-
-                      const SizedBox(height: 32),
-                      
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Today\'s Appointments',
-                            style: GoogleFonts.outfit(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: const Color(0xFF1A1A1A),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      if (todayAppointments.isEmpty)
-                        Card(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            side: BorderSide(color: Colors.grey.withOpacity(0.2)),
-                          ),
-                          elevation: 0,
-                          color: Colors.white,
-                          child: Padding(
-                            padding: const EdgeInsets.all(24.0),
-                            child: Center(
-                              child: Column(
-                                children: [
-                                  Icon(Icons.calendar_today_outlined, size: 48, color: Colors.grey.shade300),
-                                  const SizedBox(height: 12),
-                                  Text('No appointments scheduled for today.', style: GoogleFonts.inter(color: Colors.grey.shade500)),
-                                ],
-                              ),
-                            ),
-                          ),
-                        )
-                      else
-                        ...todayAppointments.map((a) => _buildAppointmentCard(
-                          context, 
-                          clientName: a.citizenName, 
-                          time: DateFormat('hh:mm a').format(a.requestedAt), 
-                          type: 'Consultation'
-                        )).toList(),
                         
                       const SizedBox(height: 40),
                     ],
@@ -309,97 +322,12 @@ class _LawyerHomeTabState extends State<LawyerHomeTab> {
   }
 
   Widget _buildDashboardHeader(BuildContext context, String role, NotificationProvider notifProvider, VoidCallback onNotifTap) {
-    final hasUnread = notifProvider.unreadCount > 0;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.only(top: 60, left: 24, right: 24, bottom: 32),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(32),
-          bottomRight: Radius.circular(32),
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Welcome,',
-                  style: GoogleFonts.inter(fontSize: 14, color: Colors.white70, fontWeight: FontWeight.w500),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Adv. $role',
-                  style: GoogleFonts.outfit(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.wb_sunny_outlined, color: Colors.amber, size: 16),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Here\'s your practice today',
-                        style: GoogleFonts.inter(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w500),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Stack(
-            children: [
-              InkWell(
-                onTap: onNotifTap,
-                borderRadius: BorderRadius.circular(50),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
-                  ),
-                  child: const Icon(Icons.notifications_outlined, color: Colors.white, size: 28),
-                ),
-              ),
-              if (hasUnread)
-                Positioned(
-                  right: 2,
-                  top: 2,
-                  child: Container(
-                    padding: const EdgeInsets.all(5),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE53935),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: const Color(0xFF2C5364), width: 2),
-                    ),
-                    child: Text(
-                      '${notifProvider.unreadCount}',
-                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ),
-            ],
-          )
-        ],
-      ),
+    return DashboardHeader(
+      title: 'Welcome back,\nAdv. $role!',
+      subtitle: 'Here is your legal practice overview.',
+      unreadNotifications: notifProvider.unreadCount,
+      onNotificationTap: onNotifTap,
+      onProfileTap: widget.onNavigateToProfile,
     );
   }
 
@@ -450,61 +378,6 @@ class _LawyerHomeTabState extends State<LawyerHomeTab> {
               style: GoogleFonts.inter(fontSize: 14, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAppointmentCard(BuildContext context, {required String clientName, required String time, required String type}) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.withOpacity(0.15)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: Theme.of(context).primaryColor.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(Icons.person_outline, color: Theme.of(context).primaryColor),
-        ),
-        title: Text(clientName, style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 16, color: const Color(0xFF1A1A1A))),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4.0),
-          child: Row(
-            children: [
-              Icon(Icons.schedule, size: 14, color: Colors.grey.shade600),
-              const SizedBox(width: 4),
-              Text(time, style: GoogleFonts.inter(color: Colors.grey.shade600, fontSize: 13, fontWeight: FontWeight.w500)),
-              const SizedBox(width: 8),
-              Text('• $type', style: GoogleFonts.inter(color: Colors.grey.shade500, fontSize: 13)),
-            ],
-          ),
-        ),
-        trailing: Container(
-          decoration: BoxDecoration(
-            color: const Color(0xFFE8F5E9),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: IconButton(
-            icon: const Icon(Icons.videocam_outlined),
-            color: const Color(0xFF2E7D32),
-            onPressed: () { 
-              // Video call implementation
-            },
-          ),
         ),
       ),
     );

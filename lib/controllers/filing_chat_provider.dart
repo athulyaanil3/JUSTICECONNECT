@@ -11,9 +11,28 @@ class FilingChatProvider with ChangeNotifier {
 
   List<Map<String, dynamic>> get messages => _messages;
   bool get isLoading => _isLoading;
+  String? get currentFilingId => _currentFilingId;
+
+  FilingChatProvider() {
+    _supabase.auth.onAuthStateChange.listen((data) {
+      if (data.event == AuthChangeEvent.signedOut) {
+        clear();
+      }
+    });
+  }
+
+  void clear() {
+    _subscription?.unsubscribe();
+    _subscription = null;
+    _currentFilingId = null;
+    _messages = [];
+    _isLoading = false;
+    notifyListeners();
+  }
 
   Future<void> loadChatForFiling(String filingId) async {
     _currentFilingId = filingId;
+    _messages = [];
     _isLoading = true;
     notifyListeners();
 
@@ -27,14 +46,18 @@ class FilingChatProvider with ChangeNotifier {
       final List<Map<String, dynamic>> decryptedMessages = [];
       for (var msg in response) {
         final newMsg = Map<String, dynamic>.from(msg);
-        newMsg['text'] = EncryptionService.decryptText(newMsg['text'] ?? '');
+        try {
+          newMsg['text'] = EncryptionService.decryptText(newMsg['text'] ?? '');
+        } catch (_) {
+          newMsg['text'] = newMsg['text'] ?? '';
+        }
         decryptedMessages.add(newMsg);
       }
       
       _messages = decryptedMessages;
       _setupRealtime(filingId);
     } catch (e) {
-      debugPrint('Error loading filing chat: ');
+      debugPrint('Error loading filing chat for $filingId: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -44,7 +67,7 @@ class FilingChatProvider with ChangeNotifier {
   void _setupRealtime(String filingId) {
     _subscription?.unsubscribe();
     _subscription = _supabase
-        .channel('public:filing_messages:filing_id=eq.')
+        .channel('public:filing_messages:filing_id=eq.$filingId')
         .onPostgresChanges(
           event: PostgresChangeEvent.insert,
           schema: 'public',
@@ -56,7 +79,11 @@ class FilingChatProvider with ChangeNotifier {
           ),
           callback: (payload) {
             final newMessage = Map<String, dynamic>.from(payload.newRecord);
-            newMessage['text'] = EncryptionService.decryptText(newMessage['text'] ?? '');
+            try {
+              newMessage['text'] = EncryptionService.decryptText(newMessage['text'] ?? '');
+            } catch (_) {
+              newMessage['text'] = newMessage['text'] ?? '';
+            }
             
             // Prevent duplicate insertion if the current user just sent it
             if (!_messages.any((m) => m['id'] == newMessage['id'])) {
@@ -89,7 +116,7 @@ class FilingChatProvider with ChangeNotifier {
       final tempMessage = {
         ...newMessage,
         'text': plainText, // Display unencrypted text locally immediately
-        'id': 'temp_',
+        'id': 'temp_${DateTime.now().millisecondsSinceEpoch}',
         'created_at': DateTime.now().toIso8601String(),
       };
       
@@ -106,14 +133,17 @@ class FilingChatProvider with ChangeNotifier {
       final index = _messages.indexWhere((m) => m['id'] == tempMessage['id']);
       if (index != -1) {
         final decryptedResponse = Map<String, dynamic>.from(response);
-        decryptedResponse['text'] = EncryptionService.decryptText(decryptedResponse['text'] ?? '');
+        try {
+          decryptedResponse['text'] = EncryptionService.decryptText(decryptedResponse['text'] ?? '');
+        } catch (_) {
+          decryptedResponse['text'] = decryptedResponse['text'] ?? '';
+        }
         _messages[index] = decryptedResponse;
         notifyListeners();
       }
 
     } catch (e) {
-      debugPrint('Error sending filing message: ');
-      // Optionally remove temp message on failure
+      debugPrint('Error sending filing message: $e');
     }
   }
 

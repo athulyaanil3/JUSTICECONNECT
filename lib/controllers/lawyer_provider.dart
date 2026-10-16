@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/legal_case.dart';
 import '../models/case_update.dart';
+import '../services/email_notification_service.dart';
 import 'package:uuid/uuid.dart';
 
 class LawyerProvider with ChangeNotifier {
@@ -15,6 +16,20 @@ class LawyerProvider with ChangeNotifier {
 
   LawyerProvider() {
     fetchMyCases();
+    _supabase.auth.onAuthStateChange.listen((data) {
+      final event = data.event;
+      if (event == AuthChangeEvent.signedIn || event == AuthChangeEvent.tokenRefreshed) {
+        fetchMyCases();
+      } else if (event == AuthChangeEvent.signedOut) {
+        clear();
+      }
+    });
+  }
+
+  void clear() {
+    _myCases = [];
+    _isLoading = false;
+    notifyListeners();
   }
 
   Future<void> fetchMyCases() async {
@@ -26,7 +41,15 @@ class LawyerProvider with ChangeNotifier {
 
     try {
       final res = await _supabase.from('cases').select().eq('lawyer_id', userId).order('created_at', ascending: false);
-      _myCases = res.map((c) => LegalCase.fromJson(c)).toList();
+      final List<LegalCase> loadedCases = [];
+      for (var c in res) {
+        try {
+          loadedCases.add(LegalCase.fromJson(c));
+        } catch (e) {
+          debugPrint('Error parsing case ${c['id']}: $e');
+        }
+      }
+      _myCases = loadedCases;
     } catch (e) {
       debugPrint('Error fetching lawyer cases: $e');
     } finally {
@@ -111,7 +134,7 @@ class LawyerProvider with ChangeNotifier {
     }
   }
 
-  Future<void> addOfficialCase(
+  Future<String?> addOfficialCase(
     String title,
     String category,
     String description,
@@ -124,21 +147,41 @@ class LawyerProvider with ChangeNotifier {
     String purpose,
   ) async {
     final userId = _supabase.auth.currentUser?.id;
-    if (userId == null) return;
+    if (userId == null) {
+      debugPrint('Error: current user is not authenticated');
+      return 'User is not authenticated. Please log in again.';
+    }
 
     try {
       String? actualCitizenId;
       if (citizenId.isNotEmpty) {
-        final profileQuery = await _supabase.from('profiles').select('id').ilike('username', citizenId).maybeSingle();
-        if (profileQuery != null && profileQuery['id'] != null) {
-          actualCitizenId = profileQuery['id'];
+        try {
+          final profileRes = await _supabase
+              .from('profiles')
+              .select('id')
+              .ilike('username', citizenId)
+              .limit(1);
+          if (profileRes.isNotEmpty && profileRes.first['id'] != null) {
+            actualCitizenId = profileRes.first['id'].toString();
+          }
+        } catch (e) {
+          debugPrint('Non-critical: error resolving citizen id: $e');
         }
       }
 
       String? actualClerkId;
-      final clerkQuery = await _supabase.from('profiles').select('id').eq('role', 'Advocate Clerk').eq('associated_lawyer_id', userId).limit(1).maybeSingle();
-      if (clerkQuery != null && clerkQuery['id'] != null) {
-        actualClerkId = clerkQuery['id'];
+      try {
+        final clerkRes = await _supabase
+            .from('profiles')
+            .select('id')
+            .eq('role', 'Advocate Clerk')
+            .eq('associated_lawyer_id', userId)
+            .limit(1);
+        if (clerkRes.isNotEmpty && clerkRes.first['id'] != null) {
+          actualClerkId = clerkRes.first['id'].toString();
+        }
+      } catch (e) {
+        debugPrint('Non-critical: error resolving clerk id: $e');
       }
 
       final res = await _supabase.from('cases').insert({
@@ -159,28 +202,51 @@ class LawyerProvider with ChangeNotifier {
 
       final newCase = LegalCase.fromJson(res);
 
-      await _supabase.from('case_updates').insert({
-        'case_id': newCase.id,
-        'update_type': 'Official Case Added',
-        'description': 'Case officially registered at $courtName (No: $caseNumber). Next hearing: ${nextHearingDate.toIso8601String().substring(0,10)}.',
-        'created_by': userId,
-        'created_at': DateTime.now().toIso8601String(),
-      });
+      // Immediately insert into local state so UI updates without delay
+      _myCases.removeWhere((c) => c.id == newCase.id);
+      _myCases.insert(0, newCase);
+      notifyListeners();
 
-      if (actualCitizenId != null) {
-        await _supabase.from('app_notifications').insert({
-          'id': Uuid().v4(),
-          'target_user': citizenId,
-          'title': 'New Case Added',
-          'message': 'Your lawyer has added your official case ($caseNumber) to the portal.',
-          'is_read': false,
+      try {
+        await _supabase.from('case_updates').insert({
+          'case_id': newCase.id,
+          'update_type': 'Official Case Added',
+          'description': 'Case officially registered at $courtName (No: $caseNumber). Next hearing: ${nextHearingDate.toIso8601String().substring(0,10)}.',
+          'created_by': userId,
           'created_at': DateTime.now().toIso8601String(),
         });
+      } catch (updateErr) {
+        debugPrint('Non-critical error creating case update: $updateErr');
       }
 
+      if (actualCitizenId != null && citizenId.isNotEmpty) {
+        try {
+          await _supabase.from('app_notifications').insert({
+            'id': const Uuid().v4(),
+            'target_user': citizenId,
+            'title': 'New Case Added',
+            'message': 'Your lawyer has added your official case ($caseNumber) to the portal.',
+            'is_read': false,
+            'created_at': DateTime.now().toIso8601String(),
+          });
+        } catch (notifErr) {
+          debugPrint('Non-critical error sending notification: $notifErr');
+        }
+      }
+
+      // Send email to user
+      EmailNotificationService.sendCaseUpdateEmail(
+        caseId: newCase.id,
+        updateType: 'Official Case Added',
+        description: 'Case officially registered at $courtName (No: $caseNumber). Next hearing: ${nextHearingDate.toIso8601String().substring(0,10)}.',
+        role: 'Lawyer',
+      );
+
       await fetchMyCases();
+      return null; // success
     } catch (e) {
       debugPrint('Error adding official case: $e');
+      return 'Failed to add case: $e';
     }
   }
 
@@ -200,6 +266,14 @@ class LawyerProvider with ChangeNotifier {
         'created_by': userId,
         'created_at': DateTime.now().toIso8601String(),
       });
+
+      // Send email to user
+      EmailNotificationService.sendCaseUpdateEmail(
+        caseId: caseId,
+        updateType: 'Lawyer Update: $newStatus',
+        description: description,
+        role: 'Lawyer',
+      );
 
       await fetchMyCases();
     } catch (e) {
@@ -281,6 +355,14 @@ class LawyerProvider with ChangeNotifier {
         });
       }
 
+      // Send email to user
+      EmailNotificationService.sendCaseUpdateEmail(
+        caseId: caseId,
+        updateType: 'Official Case Registered',
+        description: 'Case officially registered at $courtName (No: $caseNumber). Next hearing: ${nextHearingDate.toIso8601String().substring(0,10)}.',
+        role: 'Lawyer',
+      );
+
       await fetchMyCases();
     } catch (e) {
       debugPrint('Error updating official case details: $e');
@@ -326,18 +408,25 @@ class LawyerProvider with ChangeNotifier {
         'created_at': DateTime.now().toIso8601String(),
       });
 
+      // Internal clerk assignment is not notified to citizen user
+
       await fetchMyCases();
     } catch (e) {
       debugPrint('Error assigning advocate clerk: $e');
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetchAvailableClerks() async {
+  Future<List<Map<String, dynamic>>> fetchAvailableClerks({String? lawyerId}) async {
+    final userId = lawyerId ?? _supabase.auth.currentUser?.id;
+    if (userId == null) return [];
+
     try {
-      // In a full implementation, we'd filter by an association table (e.g. lawyer_clerks).
-      // For this mini-project, we fetch all users with role 'Advocate Clerk' and approval_status 'approved'.
-      final res = await _supabase.from('profiles').select('id, username').eq('role', 'Advocate Clerk');
-      return List<Map<String, dynamic>>.from(res);
+      final res = await _supabase
+          .from('profiles')
+          .select('id, username, is_verified')
+          .eq('role', 'Advocate Clerk')
+          .eq('associated_lawyer_id', userId);
+      return List<Map<String, dynamic>>.from(res.where((c) => c['is_verified'] != false));
     } catch (e) {
       debugPrint('Error fetching clerks: $e');
       return [];
