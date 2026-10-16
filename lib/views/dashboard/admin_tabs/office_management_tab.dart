@@ -34,6 +34,8 @@ class _OfficeManagementTabState extends State<OfficeManagementTab> {
     }
   }
 
+  String _searchQuery = '';
+
   void _showAddOfficeDialog() {
     final nameCtrl = TextEditingController();
     final locationCtrl = TextEditingController();
@@ -49,43 +51,78 @@ class _OfficeManagementTabState extends State<OfficeManagementTab> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: Text('Add New Office', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Text('Register Legal Office', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 18)),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     TextField(
                       controller: nameCtrl,
-                      decoration: const InputDecoration(labelText: 'Office Name'),
+                      decoration: InputDecoration(
+                        labelText: 'Office / Firm Name',
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+                      ),
                     ),
                     const SizedBox(height: 12),
                     TextField(
                       controller: locationCtrl,
-                      decoration: const InputDecoration(labelText: 'City / Location'),
+                      decoration: InputDecoration(
+                        labelText: 'City / Jurisdiction',
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+                      ),
                     ),
                     const SizedBox(height: 12),
                     TextField(
                       controller: addressCtrl,
-                      decoration: const InputDecoration(labelText: 'Full Address'),
+                      decoration: InputDecoration(
+                        labelText: 'Full Physical Address',
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+                      ),
                       maxLines: 2,
                     ),
                     const SizedBox(height: 12),
                     TextField(
                       controller: contactCtrl,
-                      decoration: const InputDecoration(labelText: 'Contact Number'),
+                      decoration: InputDecoration(
+                        labelText: 'Official Contact Number',
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+                      ),
                       keyboardType: TextInputType.phone,
                     ),
                     const SizedBox(height: 12),
                     TextField(
                       controller: imageCtrl,
-                      decoration: const InputDecoration(labelText: 'Image URL'),
+                      decoration: InputDecoration(
+                        labelText: 'Photo URL',
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+                      ),
                     ),
                   ],
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text('Cancel', style: GoogleFonts.inter(color: Colors.grey[700], fontWeight: FontWeight.w600)),
+                ),
                 ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0D256C),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                  ),
                   onPressed: isSubmitting ? null : () async {
                     if (nameCtrl.text.isEmpty || locationCtrl.text.isEmpty) return;
                     
@@ -103,15 +140,17 @@ class _OfficeManagementTabState extends State<OfficeManagementTab> {
                       
                       Navigator.pop(ctx);
                       _fetchOffices();
-                      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Office added successfully!')));
+                      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Office registered successfully!')));
                     } catch (e) {
                       debugPrint('Error: $e');
                       setDialogState(() => isSubmitting = false);
                       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to add office')));
                     }
                   },
-                  child: isSubmitting ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Add Office'),
-                )
+                  child: isSubmitting
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : Text('Save Office', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                ),
               ],
             );
           }
@@ -120,18 +159,26 @@ class _OfficeManagementTabState extends State<OfficeManagementTab> {
     );
   }
 
-  void _deleteOffice(String id) async {
+  void _deleteOffice(String id, String officeName) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Office?'),
-        content: const Text('Are you sure you want to delete this office?'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Delete Office?', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+        content: Text('Are you sure you want to delete "$officeName" from the public directory?', style: GoogleFonts.inter(color: Colors.grey[700])),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: GoogleFonts.inter(color: Colors.grey[700], fontWeight: FontWeight.w600)),
+          ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true), 
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-            child: const Text('Delete')
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red[700],
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Delete'),
           ),
         ],
       )
@@ -141,7 +188,7 @@ class _OfficeManagementTabState extends State<OfficeManagementTab> {
       try {
         await _supabase.from('lawyer_offices').delete().eq('id', id);
         _fetchOffices();
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Office deleted')));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Office deleted successfully')));
       } catch (e) {
         debugPrint('Error deleting office: $e');
       }
@@ -154,39 +201,187 @@ class _OfficeManagementTabState extends State<OfficeManagementTab> {
       return const Center(child: CircularProgressIndicator());
     }
 
+    final filtered = _offices.where((o) {
+      if (_searchQuery.isEmpty) return true;
+      final q = _searchQuery.toLowerCase();
+      final name = (o['name'] ?? '').toString().toLowerCase();
+      final loc = (o['location'] ?? '').toString().toLowerCase();
+      final addr = (o['address'] ?? '').toString().toLowerCase();
+      return name.contains(q) || loc.contains(q) || addr.contains(q);
+    }).toList();
+
     return Scaffold(
-      body: _offices.isEmpty
-          ? Center(child: Text('No offices found.', style: GoogleFonts.inter(color: Colors.grey)))
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: _offices.length,
-              itemBuilder: (context, index) {
-                final office = _offices[index];
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundImage: NetworkImage(office['image_url'] ?? ''),
-                      backgroundColor: Colors.blue[100],
-                      child: office['image_url'] == null ? const Icon(Icons.business) : null,
+      backgroundColor: const Color(0xFFF7F9FC),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showAddOfficeDialog,
+        backgroundColor: const Color(0xFF0D256C),
+        foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        icon: const Icon(Icons.add_business_rounded),
+        label: Text('New Office', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+      ),
+      body: Column(
+        children: [
+          // Search Bar
+          Container(
+            color: Colors.white,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            child: Container(
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: TextField(
+                onChanged: (val) => setState(() => _searchQuery = val.trim()),
+                decoration: InputDecoration(
+                  hintText: 'Search offices by name, city, location...',
+                  hintStyle: GoogleFonts.inter(fontSize: 13, color: Colors.grey[500]),
+                  prefixIcon: const Icon(Icons.search, size: 20, color: Color(0xFF0D256C)),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
+                          onPressed: () => setState(() => _searchQuery = ''),
+                        )
+                      : null,
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 11),
+                ),
+              ),
+            ),
+          ),
+
+          // Office List
+          Expanded(
+            child: filtered.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.business_outlined, size: 56, color: Colors.grey[300]),
+                        const SizedBox(height: 12),
+                        Text('No offices found in directory.', style: GoogleFonts.inter(color: Colors.grey[600], fontSize: 15)),
+                      ],
                     ),
-                    title: Text(office['name'], style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                    subtitle: Text('${office['location']}\n${office['contact_number']}', maxLines: 2),
-                    isThreeLine: true,
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red),
-                      onPressed: () => _deleteOffice(office['id']),
+                  )
+                : RefreshIndicator(
+                    onRefresh: _fetchOffices,
+                    color: const Color(0xFF0D256C),
+                    child: ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+                      itemCount: filtered.length,
+                      itemBuilder: (context, index) {
+                        final office = filtered[index];
+                        final name = office['name'] ?? 'Law Office';
+                        final location = office['location'] ?? 'Location';
+                        final address = office['address'] ?? '';
+                        final contact = office['contact_number'] ?? 'N/A';
+                        final imageUrl = office['image_url'];
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.grey.shade200),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.02),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Container(
+                                    width: 60,
+                                    height: 60,
+                                    color: Colors.blue.shade50,
+                                    child: (imageUrl != null && imageUrl.toString().isNotEmpty)
+                                        ? Image.network(
+                                            imageUrl,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (context, error, stackTrace) => const Icon(Icons.business, color: Color(0xFF0D256C), size: 30),
+                                          )
+                                        : const Icon(Icons.business, color: Color(0xFF0D256C), size: 30),
+                                  ),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        name,
+                                        style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: const Color(0xFF0D256C)),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        children: [
+                                          Icon(Icons.location_on_outlined, size: 14, color: Colors.grey[500]),
+                                          const SizedBox(width: 4),
+                                          Expanded(
+                                            child: Text(
+                                              location,
+                                              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey[800]),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      if (contact != 'N/A') ...[
+                                        const SizedBox(height: 3),
+                                        Row(
+                                          children: [
+                                            Icon(Icons.phone_outlined, size: 14, color: Colors.grey[500]),
+                                            const SizedBox(width: 4),
+                                            Expanded(
+                                              child: Text(
+                                                contact,
+                                                style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[600]),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                      if (address.isNotEmpty) ...[
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          address,
+                                          style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[600]),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: Icon(Icons.delete_outline_rounded, color: Colors.red[400], size: 22),
+                                  tooltip: 'Delete Office',
+                                  onPressed: () => _deleteOffice(office['id'], name),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ),
-                );
-              },
-            ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _showAddOfficeDialog,
-        backgroundColor: Theme.of(context).primaryColor,
-        child: const Icon(Icons.add, color: Colors.white),
-        tooltip: 'Add New Office',
+          ),
+        ],
       ),
     );
   }
