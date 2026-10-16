@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../../controllers/request_provider.dart';
 import '../../../controllers/notification_provider.dart';
+import '../../../controllers/lawyer_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'lawyer_tabs/lawyer_home_tab.dart';
 import 'lawyer_tabs/client_management_tab.dart';
@@ -30,6 +31,7 @@ class _LawyerDashboardState extends State<LawyerDashboard> {
     _updateSecurity();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<RequestProvider>(context, listen: false).fetchRequests();
+      Provider.of<LawyerProvider>(context, listen: false).fetchMyCases();
       final user = Supabase.instance.client.auth.currentUser;
       if (user != null) {
         // NotificationProvider usually uses the username as the targetUser
@@ -65,7 +67,13 @@ class _LawyerDashboardState extends State<LawyerDashboard> {
   }
 
   late final List<Widget> _tabs = [
-    LawyerHomeTab(onNavigateToClients: () => _switchTab(1)),
+    LawyerHomeTab(
+      onNavigateToClients: () => _switchTab(1),
+      onNavigateToCases: () => _switchTab(2),
+      onNavigateToHearings: () => _switchTab(3),
+      onNavigateToAppointments: () => _switchTab(4),
+      onNavigateToProfile: () => _switchTab(6),
+    ),
     const ClientManagementTab(),
     const CaseManagementTab(),
     const CauselistTab(role: 'Lawyer'),
@@ -91,9 +99,9 @@ class _LawyerDashboardState extends State<LawyerDashboard> {
             color: Colors.white,
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 24,
-                offset: const Offset(0, -8),
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 16,
+                offset: const Offset(0, -4),
               ),
             ],
           ),
@@ -106,12 +114,12 @@ class _LawyerDashboardState extends State<LawyerDashboard> {
               _updateSecurity();
             },
             type: BottomNavigationBarType.fixed,
-            backgroundColor: Colors.transparent,
+            backgroundColor: Colors.white,
             elevation: 0,
-            selectedItemColor: Theme.of(context).primaryColor,
+            selectedItemColor: const Color(0xFF0D256C),
             unselectedItemColor: Colors.grey.shade400,
-            selectedLabelStyle: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 12),
-            unselectedLabelStyle: GoogleFonts.inter(fontWeight: FontWeight.normal, fontSize: 12),
+            selectedLabelStyle: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 11),
+            unselectedLabelStyle: GoogleFonts.inter(fontWeight: FontWeight.normal, fontSize: 11),
             items: const [
               BottomNavigationBarItem(
                 icon: Icon(Icons.dashboard_outlined),
@@ -129,9 +137,9 @@ class _LawyerDashboardState extends State<LawyerDashboard> {
                 label: 'Cases',
               ),
               BottomNavigationBarItem(
-                icon: Icon(Icons.list_alt_outlined),
-                activeIcon: Icon(Icons.list_alt),
-                label: 'Causelist',
+                icon: Icon(Icons.gavel_outlined),
+                activeIcon: Icon(Icons.gavel),
+                label: 'Hearings',
               ),
               BottomNavigationBarItem(
                 icon: Icon(Icons.calendar_month_outlined),

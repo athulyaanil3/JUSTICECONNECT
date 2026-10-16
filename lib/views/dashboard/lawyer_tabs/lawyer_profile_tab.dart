@@ -6,7 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:justice_connect/views/auth/unified_auth_screen.dart';
-import '../citizen_tabs/lawyer_public_profile_screen.dart';
+import '../../shared/submit_complaint_screen.dart';
 
 class LawyerProfileTab extends StatefulWidget {
   const LawyerProfileTab({Key? key}) : super(key: key);
@@ -26,6 +26,9 @@ class _LawyerProfileTabState extends State<LawyerProfileTab> {
   
   List<Map<String, dynamic>> _achievements = [];
   String _username = 'Unknown Lawyer';
+  double _rating = 0.0;
+  int _ratingCount = 0;
+  int _clientsCount = 0;
   
   String? _localCoverPhotoPath;
   String? _localProfilePhotoPath;
@@ -47,21 +50,31 @@ class _LawyerProfileTabState extends State<LawyerProfileTab> {
         _username = data['username'] ?? 'Unknown Lawyer';
         _bioController.text = data['bio'] ?? '';
         _specializationController.text = data['specialization'] ?? '';
-        _experienceController.text = data['experience']?.toString() ?? '';
+        final exp = data['experience'];
+        _experienceController.text = (exp != null && exp.toString() != '0') ? exp.toString() : '';
         _coverPhotoUrl = data['cover_url'];
         _profilePhotoUrl = data['profile_url'];
+        _rating = (data['rating'] as num?)?.toDouble() ?? 0.0;
+        _ratingCount = (data['rating_count'] as num?)?.toInt() ?? 0;
         
-        if (data['achievements'] != null) {
+        if (data['achievements'] != null && data['achievements'].toString().isNotEmpty) {
           if (data['achievements'] is String) {
             _achievements = List<Map<String, dynamic>>.from(jsonDecode(data['achievements']));
           } else {
              _achievements = List<Map<String, dynamic>>.from(data['achievements']);
           }
+        } else {
+          _achievements = [];
         }
+
+        // Real client consultations count
+        try {
+          final casesRes = await _supabase.from('cases').select('id').eq('lawyer_id', user.id);
+          _clientsCount = (casesRes as List).length;
+        } catch (_) {}
       }
     } catch (e) {
       debugPrint('Error fetching profile: $e');
-      // Mock data if columns don't exist
     } finally {
       setState(() => _isLoading = false);
     }
@@ -407,21 +420,20 @@ class _LawyerProfileTabState extends State<LawyerProfileTab> {
   Widget build(BuildContext context) {
     if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
 
-    final spec = _specializationController.text.isNotEmpty ? _specializationController.text : 'Corporate Law & Civil Litigation';
-    final rawExp = _experienceController.text;
-    final exp = (rawExp.isEmpty || rawExp == '0') ? '10' : rawExp;
-    final bio = _bioController.text.isNotEmpty ? _bioController.text : 'Dedicated and results-driven legal professional with extensive experience in Corporate Law and Civil Litigation. Proven track record of representing clients in high-stakes negotiations and courtroom proceedings.';
-    
-    // Provide dummy achievements if none exist
-    List<Map<String, dynamic>> displayAchievements = _achievements;
-    if (displayAchievements.isEmpty) {
-      displayAchievements = [
-        {
-          'title': 'Senior Advocate',
-          'year': '2018 - Present',
-          'description': 'Representing clients in high-stakes corporate and civil litigation. Successfully resolved over 100+ complex disputes.'
-        },
-      ];
+    final spec = _specializationController.text.trim();
+    final rawExp = _experienceController.text.trim();
+    final bio = _bioController.text.trim();
+    final isNewEmptyProfile = spec.isEmpty && rawExp.isEmpty && bio.isEmpty && _achievements.isEmpty;
+
+    String headline;
+    if (spec.isNotEmpty && rawExp.isNotEmpty) {
+      headline = '$spec | $rawExp+ Years Experience';
+    } else if (spec.isNotEmpty) {
+      headline = spec;
+    } else if (rawExp.isNotEmpty) {
+      headline = '$rawExp+ Years Experience';
+    } else {
+      headline = 'Specialization & Experience not set';
     }
 
     return Scaffold(
@@ -441,6 +453,16 @@ class _LawyerProfileTabState extends State<LawyerProfileTab> {
               onPressed: _showEditProfileDialog,
             ),
           IconButton(
+            icon: const Icon(Icons.support_agent_outlined, color: Colors.blue),
+            tooltip: 'Support & Grievances',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SubmitComplaintScreen()),
+              );
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.logout, color: Colors.red),
             tooltip: 'Logout',
             onPressed: () => _logout(context),
@@ -450,6 +472,57 @@ class _LawyerProfileTabState extends State<LawyerProfileTab> {
       body: SingleChildScrollView(
         child: Column(
           children: [
+            // Fresh profile setup callout for newly logged-in lawyer
+            if (isNewEmptyProfile)
+              Container(
+                margin: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.amber.shade300),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.assignment_ind_outlined, color: Colors.amber.shade900, size: 28),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Complete Your Lawyer Profile',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                              color: Colors.amber.shade900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Your profile is fresh and empty. Enter your specialization, years of experience, bio, and achievements from scratch so clients can discover you on JusticeConnect.',
+                            style: GoogleFonts.inter(fontSize: 13, color: Colors.black87),
+                          ),
+                          const SizedBox(height: 10),
+                          ElevatedButton.icon(
+                            onPressed: _showEditProfileDialog,
+                            icon: const Icon(Icons.edit, size: 16),
+                            label: const Text('Enter Details Now'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.amber.shade900,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
             // TOP CARD (Intro)
             Container(
               color: Colors.white,
@@ -543,20 +616,58 @@ class _LawyerProfileTabState extends State<LawyerProfileTab> {
                       children: [
                         Text(_username, style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87)),
                         const SizedBox(height: 4),
-                        Text('$spec | $exp+ Years of Experience', style: GoogleFonts.inter(fontSize: 15, color: Colors.black87)),
+                        Text(
+                          headline,
+                          style: GoogleFonts.inter(
+                            fontSize: 15,
+                            color: (spec.isEmpty && rawExp.isEmpty) ? Colors.grey[500] : Colors.black87,
+                            fontStyle: (spec.isEmpty && rawExp.isEmpty) ? FontStyle.italic : FontStyle.normal,
+                          ),
+                        ),
                         const SizedBox(height: 8),
                         Text('JusticeConnect Verified Advocate', style: GoogleFonts.inter(fontSize: 13, color: Colors.grey[600])),
                         const SizedBox(height: 12),
-                        Row(
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            Icon(Icons.star, color: Colors.amber[600], size: 16),
-                            const SizedBox(width: 4),
-                            Text('4.8', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14)),
-                            Text(' (120+ consultations)', style: GoogleFonts.inter(color: Colors.grey[600], fontSize: 14)),
-                            const SizedBox(width: 16),
+                            if (_ratingCount > 0 && _rating > 0.0) ...[
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.star, color: Colors.amber[600], size: 16),
+                                  const SizedBox(width: 4),
+                                  Text(_rating.toStringAsFixed(1), style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14)),
+                                ],
+                              ),
+                              Text('($_ratingCount ${_ratingCount == 1 ? 'review' : 'reviews'})', style: GoogleFonts.inter(color: Colors.grey[600], fontSize: 14)),
+                            ] else ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF1A365D).withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  'Newly Registered • No client ratings yet',
+                                  style: GoogleFonts.inter(
+                                    color: const Color(0xFF1A365D),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
                             Text('•', style: GoogleFonts.inter(color: Colors.grey[600])),
-                            const SizedBox(width: 16),
-                            Text('500+ Connections', style: GoogleFonts.inter(color: const Color(0xFF0A66C2), fontWeight: FontWeight.w600, fontSize: 13)),
+                            Text(
+                              '$_clientsCount ${_clientsCount == 1 ? 'Client' : 'Clients'}',
+                              style: GoogleFonts.inter(
+                                color: const Color(0xFF0A66C2),
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 16),
@@ -615,7 +726,18 @@ class _LawyerProfileTabState extends State<LawyerProfileTab> {
                       )
                     ],
                   ),
-                  Text(bio, style: GoogleFonts.inter(fontSize: 14, color: Colors.black87, height: 1.5)),
+                  if (bio.isNotEmpty)
+                    Text(bio, style: GoogleFonts.inter(fontSize: 14, color: Colors.black87, height: 1.5))
+                  else
+                    Text(
+                      'No biography added yet. Tap the edit icon to enter your professional background, practice areas, and education from scratch.',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        color: Colors.grey[500],
+                        fontStyle: FontStyle.italic,
+                        height: 1.5,
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -632,63 +754,145 @@ class _LawyerProfileTabState extends State<LawyerProfileTab> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Experience & Achievements', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
-                      IconButton(
-                        icon: const Icon(Icons.edit, color: Colors.grey, size: 20),
-                        onPressed: _showEditProfileDialog,
-                      )
+                      Expanded(
+                        child: Text(
+                          'Experience & Achievements',
+                          style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.add, color: Color(0xFF0A66C2), size: 22),
+                            tooltip: 'Add Achievement',
+                            onPressed: _addAchievement,
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.edit, color: Colors.grey, size: 20),
+                            tooltip: 'Edit Profile',
+                            onPressed: _showEditProfileDialog,
+                          ),
+                        ],
+                      ),
                     ],
                   ),
-                  ListView.separated(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: displayAchievements.length,
-                    separatorBuilder: (context, index) => const Divider(height: 24),
-                    itemBuilder: (context, index) {
-                      final item = displayAchievements[index];
-                      final type = item['type'] ?? 'award';
-                      
-                      IconData icon = Icons.emoji_events;
-                      String subtitle = 'JusticeConnect Legal Hub'; // Fallback
-                      
-                      if (type == 'work') {
-                        icon = Icons.work;
-                        subtitle = item['company']?.toString().isNotEmpty == true ? item['company'] : 'Law Firm / Office';
-                      } else if (type == 'case') {
-                        icon = Icons.gavel;
-                        subtitle = 'Success Case';
-                      } else {
-                        subtitle = 'Award & Recognition';
-                      }
-                      
-                      return Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                  if (_achievements.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                      alignment: Alignment.center,
+                      child: Column(
                         children: [
-                          Container(
-                            width: 48,
-                            height: 48,
-                            color: Colors.grey[100],
-                            child: Icon(icon, color: const Color(0xFF0A66C2)),
+                          Icon(Icons.workspace_premium_outlined, size: 40, color: Colors.grey[400]),
+                          const SizedBox(height: 8),
+                          Text(
+                            'No experience or achievements added yet',
+                            style: GoogleFonts.inter(color: Colors.grey[600], fontSize: 14),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(item['title'] ?? '', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87)),
-                                const SizedBox(height: 2),
-                                Text(subtitle, style: GoogleFonts.inter(fontSize: 14, color: Colors.black87)),
-                                const SizedBox(height: 4),
-                                Text(item['year'] ?? '', style: GoogleFonts.inter(color: Colors.grey[600], fontSize: 13)),
-                                const SizedBox(height: 8),
-                                if (item['description']?.isNotEmpty == true)
-                                  Text(item['description'], style: GoogleFonts.inter(color: Colors.black87, fontSize: 14, height: 1.4)),
-                              ],
+                          const SizedBox(height: 12),
+                          OutlinedButton.icon(
+                            onPressed: _addAchievement,
+                            icon: const Icon(Icons.add, size: 18),
+                            label: const Text('Add Experience / Milestone'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF0A66C2),
+                              side: const BorderSide(color: Color(0xFF0A66C2)),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
                           ),
                         ],
-                      );
-                    },
+                      ),
+                    )
+                  else
+                    ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: _achievements.length,
+                      separatorBuilder: (context, index) => const Divider(height: 24),
+                      itemBuilder: (context, index) {
+                        final item = _achievements[index];
+                        final type = item['type'] ?? 'award';
+                        
+                        IconData icon = Icons.emoji_events;
+                        String subtitle = 'JusticeConnect Legal Hub';
+                        
+                        if (type == 'work') {
+                          icon = Icons.work;
+                          subtitle = item['company']?.toString().isNotEmpty == true ? item['company'] : 'Law Firm / Office';
+                        } else if (type == 'case') {
+                          icon = Icons.gavel;
+                          subtitle = 'Success Case';
+                        } else {
+                          subtitle = 'Award & Recognition';
+                        }
+                        
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 48,
+                              height: 48,
+                              color: Colors.grey[100],
+                              child: Icon(icon, color: const Color(0xFF0A66C2)),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(item['title'] ?? '', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87)),
+                                  const SizedBox(height: 2),
+                                  Text(subtitle, style: GoogleFonts.inter(fontSize: 14, color: Colors.black87)),
+                                  const SizedBox(height: 4),
+                                  Text(item['year'] ?? '', style: GoogleFonts.inter(color: Colors.grey[600], fontSize: 13)),
+                                  const SizedBox(height: 8),
+                                  if (item['description']?.isNotEmpty == true)
+                                    Text(item['description'], style: GoogleFonts.inter(color: Colors.black87, fontSize: 14, height: 1.4)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                ],
+              ),
+            ),
+
+            // HELP & GRIEVANCES CARD
+            Container(
+              color: Colors.white,
+              margin: const EdgeInsets.only(bottom: 24),
+              padding: const EdgeInsets.all(16),
+              width: double.infinity,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Support & Feedback', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
+                  const SizedBox(height: 12),
+                  Card(
+                    elevation: 0,
+                    color: Colors.red.shade50.withOpacity(0.6),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(color: Colors.red.shade200),
+                    ),
+                    child: ListTile(
+                      leading: const CircleAvatar(
+                        backgroundColor: Colors.red,
+                        child: Icon(Icons.report_problem_outlined, color: Colors.white),
+                      ),
+                      title: Text('Report Issue / Give Complaint', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14)),
+                      subtitle: const Text('Directly notify admin regarding bugs, misconduct, or dispute', style: TextStyle(fontSize: 12)),
+                      trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const SubmitComplaintScreen()),
+                        );
+                      },
+                    ),
                   ),
                 ],
               ),

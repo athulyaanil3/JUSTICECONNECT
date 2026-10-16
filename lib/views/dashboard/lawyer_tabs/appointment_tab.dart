@@ -27,43 +27,70 @@ class _AppointmentTabState extends State<AppointmentTab> with AutomaticKeepAlive
 
   Future<void> _loadAppointments() async {
     final prefs = await SharedPreferences.getInstance();
-    final userId = Supabase.instance.client.auth.currentUser?.id ?? 'unknown';
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+
+    // Purge any legacy shared mock keys
+    await prefs.remove('lawyer_appointments');
+    await prefs.remove('lawyer_appointments_unknown');
+
+    if (userId == null || userId.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _appointments = [];
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+
     final data = prefs.getString('lawyer_appointments_$userId');
     if (data != null) {
-      final List<dynamic> decoded = json.decode(data);
-      setState(() {
-        _appointments = decoded.map((e) => Map<String, dynamic>.from(e)).toList();
-        _isLoading = false;
-      });
+      try {
+        final List<dynamic> decoded = json.decode(data);
+        // Filter out legacy dummy appointments if present
+        final cleaned = decoded
+            .map((e) => Map<String, dynamic>.from(e))
+            .where((e) {
+              final title = (e['title'] ?? '').toString().toLowerCase();
+              final subtitle = (e['subtitle'] ?? '').toString().toLowerCase();
+              return !title.contains('rahul menon') &&
+                     !title.contains('sneha john') &&
+                     !subtitle.contains('online consultation') &&
+                     !subtitle.contains('office visit');
+            })
+            .toList();
+        if (mounted) {
+          setState(() {
+            _appointments = cleaned;
+            _isLoading = false;
+          });
+        }
+        await prefs.setString('lawyer_appointments_$userId', json.encode(cleaned));
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _appointments = [];
+            _isLoading = false;
+          });
+        }
+      }
     } else {
-      // Default dummy data if nothing exists
-      setState(() {
-        _appointments = [
-          {
-            'id': DateTime.now().millisecondsSinceEpoch.toString(),
-            'title': 'Rahul Menon',
-            'subtitle': 'Online Consultation',
-            'time': '11:00 AM',
-            'date': DateTime.now().toIso8601String(),
-          },
-          {
-            'id': (DateTime.now().millisecondsSinceEpoch + 1).toString(),
-            'title': 'Sneha John',
-            'subtitle': 'Office Visit',
-            'time': '02:30 PM',
-            'date': DateTime.now().toIso8601String(),
-          }
-        ];
-        _isLoading = false;
-      });
-      _saveAppointments();
+      // Fresh new lawyer starts with completely empty schedule
+      if (mounted) {
+        setState(() {
+          _appointments = [];
+          _isLoading = false;
+        });
+      }
     }
   }
 
   Future<void> _saveAppointments() async {
     final prefs = await SharedPreferences.getInstance();
-    final userId = Supabase.instance.client.auth.currentUser?.id ?? 'unknown';
-    await prefs.setString('lawyer_appointments_$userId', json.encode(_appointments));
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId != null && userId.isNotEmpty) {
+      await prefs.setString('lawyer_appointments_$userId', json.encode(_appointments));
+    }
   }
 
   void _addAppointment(String title, String subtitle, String time, DateTime date) {
@@ -76,7 +103,7 @@ class _AppointmentTabState extends State<AppointmentTab> with AutomaticKeepAlive
         'date': date.toIso8601String(),
       });
       // Sort by date then time (simple approximation)
-      _appointments.sort((a, b) => DateTime.parse(a['date']).compareTo(DateTime.parse(b['date'])));
+      _appointments.sort((a, b) => DateTime.parse(a['date']).toLocal().compareTo(DateTime.parse(b['date']).toLocal()));
     });
     _saveAppointments();
   }
@@ -207,7 +234,7 @@ class _AppointmentTabState extends State<AppointmentTab> with AutomaticKeepAlive
     // Group appointments by Date
     final Map<String, List<Map<String, dynamic>>> grouped = {};
     for (var app in _appointments) {
-      final dateStr = DateFormat('MMM dd, yyyy').format(DateTime.parse(app['date']));
+      final dateStr = DateFormat('MMM dd, yyyy').format(DateTime.parse(app['date']).toLocal());
       if (!grouped.containsKey(dateStr)) {
         grouped[dateStr] = [];
       }
@@ -219,19 +246,27 @@ class _AppointmentTabState extends State<AppointmentTab> with AutomaticKeepAlive
       appBar: AppBar(
         title: Text(
           'My Schedule',
-          style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 24),
+          style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 20, color: const Color(0xFF0D256C)),
         ),
-        backgroundColor: Colors.transparent,
+        backgroundColor: Colors.white,
         foregroundColor: const Color(0xFF0D256C),
-        elevation: 0,
+        elevation: 0.5,
         centerTitle: false,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadAppointments,
+            tooltip: 'Refresh',
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showAddAppointmentDialog,
         icon: const Icon(Icons.add),
-        label: const Text('Add Appointment'),
-        backgroundColor: Theme.of(context).primaryColor,
+        label: Text('Add Appointment', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+        backgroundColor: const Color(0xFF0D256C),
         foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       body: grouped.isEmpty
           ? Center(
